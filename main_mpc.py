@@ -93,8 +93,8 @@ def main():
         w_rotor_hist.append(w_rotor.copy())
         alpha_rotor_hist.append(alpha_rotor.copy())
 
-        # NMPC control
-        status, w_cmd = nmpc_control.solve(s_feedback, ref)
+        # NMPC control with trajectory tracking
+        status, w_cmd = nmpc_control.solve_for_trajectory(s_feedback, t_sim[i])
 
         t_ode = [t_sim[i], t_sim[i+1]]
 

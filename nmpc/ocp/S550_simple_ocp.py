@@ -196,5 +196,70 @@ class S550SimpleOcp:
 
         return status, rotor_speed
 
+    def solve_for_trajectory(self, state, t_curr, u_prev=None):
+        '''
+        Solve OCP problem with trajectory tracking along prediction horizon
+        :param state: p (World), v (Body), q, w (Body)
+        :param t_curr: Current time
+        :param u_prev: u1...u6 (Rotor thrust)
+        :return: status, u(u1...u6)
+        '''
+        from ref_generation.ref_generator import get_reference
+
+        if u_prev is None:
+            u_prev = np.zeros((6,))
+
+        # Get time step for prediction horizon
+        N = self.ocp.solver_options.N_horizon
+        T = self.ocp.solver_options.tf
+        dt = T / N
+
+        # Set constraint at the first stage
+        self.ocp_solver.set(0, 'lbx', state)
+        self.ocp_solver.set(0, 'ubx', state)
+
+        # Set reference for each stage along the prediction horizon
+        for stage in range(N):
+            # Get reference at future time
+            t_ref = t_curr + stage * dt
+            ref = get_reference(t_ref)
+
+            # Convert to NMPC reference format
+            ref_nmpc = np.zeros((13,))
+            ref_nmpc[0:6] = ref[0:6]
+            ref_nmpc[6] = np.cos(ref[6]/2.0)
+            ref_nmpc[9] = np.sin(ref[6]/2.0)
+            ref_nmpc[12] = ref[7]
+
+            y_ref = np.concatenate((ref_nmpc, u_prev))
+            self.ocp_solver.set(stage, 'y_ref', y_ref)
+
+        # Set terminal reference
+        t_ref_N = t_curr + T
+        ref_N = get_reference(t_ref_N)
+        ref_nmpc_N = np.zeros((13,))
+        ref_nmpc_N[0:6] = ref_N[0:6]
+        ref_nmpc_N[6] = np.cos(ref_N[6]/2.0)
+        ref_nmpc_N[9] = np.sin(ref_N[6]/2.0)
+        ref_nmpc_N[12] = ref_N[7]
+
+        self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
+
+        # Solve OCP
+        status = self.ocp_solver.solve()
+
+        # Store current state trajectory for warm start
+        self.previous_states = []
+        for stage in range(N + 1):
+            x_stage = self.ocp_solver.get(stage, 'x')
+            self.previous_states.append(x_stage.copy())
+
+        # Get control input at the first stage
+        u = self.ocp_solver.get(0, 'u')
+
+        rotor_speed = np.sqrt(u/self.C_T)
+
+        return status, rotor_speed
+
     def get_json_file_name(self):
         return self.solver_json
