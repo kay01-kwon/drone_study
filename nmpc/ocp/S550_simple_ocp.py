@@ -124,27 +124,30 @@ class S550SimpleOcp:
         # Store state trajectory for warm start
         self.previous_states = None
 
+        self.ref_nmpc = np.zeros((13,))
+        self.ref_nmpc[6] = 1.0
+
     def solve(self, state, ref, u_prev=None):
         '''
         Solve OCP problem with warm start
         :param state: p (World), v (Body), q, w (Body)
         :param ref: p (World), v (World), yaw_des, dot_yaw_des
-        :param u_prev: u1...u6 (Rotor thrust)
-        :return: status, u(u1...u6)
+        :param u_prev: w_cmd1...w_cmd6 (Rotor speed)
+        :return: status, w_cmd(w_cmd1...w_cmd6)
         '''
 
         if u_prev is None:
             u_prev = np.zeros((6,))
 
-        ref_nmpc = np.zeros((13,))
-        ref_nmpc[0:6] = ref[0:6]
-        ref_nmpc[6] = np.cos(ref[6]/2.0)
-        ref_nmpc[9] = np.sin(ref[6]/2.0)
-        ref_nmpc[12] = ref[7]
+        self.ref_nmpc[0:6] = ref[0:6]
+        self.ref_nmpc[6] = np.cos(ref[6]/2.0)
+        self.ref_nmpc[9] = np.sin(ref[6]/2.0)
+        self.ref_nmpc[12] = ref[7]
 
-        y_ref = np.concatenate((ref_nmpc,u_prev))
-        y_ref_N = ref_nmpc
+        y_ref = np.concatenate((self.ref_nmpc,u_prev))
+        y_ref_N = self.ref_nmpc
 
+        # Transform linear velocity from body to world
         q = state[6:10]
         R_B_W = quaternion_to_rotm(q)
         v_world = R_B_W @ state[3:6]
@@ -153,8 +156,8 @@ class S550SimpleOcp:
         state_new[3:6] = v_world
 
         # Set constraint at the first stage
-        self.ocp_solver.set(0, 'lbx', state)
-        self.ocp_solver.set(0, 'ubx', state)
+        self.ocp_solver.set(0, 'lbx', state_new)
+        self.ocp_solver.set(0, 'ubx', state_new)
 
         # Warm start: Use previous state trajectory as reference
         if self.previous_states is not None:
@@ -167,11 +170,11 @@ class S550SimpleOcp:
                     self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
                 else:
                     # Last stage: use terminal reference
-                    y_ref_warm = np.concatenate((ref_nmpc, u_prev))
+                    y_ref_warm = np.concatenate((self.ref_nmpc, u_prev))
                     self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
 
             # Set terminal reference
-            self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'y_ref', ref_nmpc)
+            self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'y_ref', self.ref_nmpc)
         else:
             # First solve: use constant reference
             for stage in range(self.ocp.solver_options.N_horizon):
@@ -202,7 +205,7 @@ class S550SimpleOcp:
         :param state: p (World), v (Body), q, w (Body)
         :param t_curr: Current time
         :param u_prev: u1...u6 (Rotor thrust)
-        :return: status, u(u1...u6)
+        :return: status, w_cmd(w_cmd1...w_cmd6)
         '''
         from ref_generation.ref_generator import get_reference
 
@@ -214,9 +217,17 @@ class S550SimpleOcp:
         T = self.ocp.solver_options.tf
         dt = T / N
 
+        # Transform linear velocity from body to world
+        q = state[6:10]
+        R_B_W = quaternion_to_rotm(q)
+        v_world = R_B_W @ state[3:6]
+
+        state_new = state
+        state_new[3:6] = v_world
+
         # Set constraint at the first stage
-        self.ocp_solver.set(0, 'lbx', state)
-        self.ocp_solver.set(0, 'ubx', state)
+        self.ocp_solver.set(0, 'lbx', state_new)
+        self.ocp_solver.set(0, 'ubx', state_new)
 
         # Set reference for each stage along the prediction horizon
         for stage in range(N):
@@ -225,13 +236,12 @@ class S550SimpleOcp:
             ref = get_reference(t_ref)
 
             # Convert to NMPC reference format
-            ref_nmpc = np.zeros((13,))
-            ref_nmpc[0:6] = ref[0:6]
-            ref_nmpc[6] = np.cos(ref[6]/2.0)
-            ref_nmpc[9] = np.sin(ref[6]/2.0)
-            ref_nmpc[12] = ref[7]
+            self.ref_nmpc[0:6] = ref[0:6]
+            self.ref_nmpc[6] = np.cos(ref[6]/2.0)
+            self.ref_nmpc[9] = np.sin(ref[6]/2.0)
+            self.ref_nmpc[12] = ref[7]
 
-            y_ref = np.concatenate((ref_nmpc, u_prev))
+            y_ref = np.concatenate((self.ref_nmpc, u_prev))
             self.ocp_solver.set(stage, 'y_ref', y_ref)
 
         # Set terminal reference
