@@ -1,0 +1,40 @@
+# Drone Simulation Parameters
+
+dynamic_params:
+  m: 2.9  # Mass [kg]
+  MoiArray: [0.06, 0.06, 0.09]  # Moment of inertia [kg*m^2]
+  com_offset: [0.0, 0.0, 0.0]  # Center of mass offset [m]
+
+drone_params:
+  arm_length: 0.265  # Arm length [m]
+  motor_const: 1.465e-7  # Motor thrust constant
+  moment_const: 0.01569  # Motor moment constant
+
+rotor_params:
+  p: [25.16687, 0.003933, 515.605]  # Rotor model parameters
+  w_rotor_min: 2000  # Minimum rotor speed [RPM]
+  w_rotor_max: 7200  # Maximum rotor speed [RPM]
+  alpha_rotor_max: 15000  # Maximum rotor acceleration [RPM/s]
+  jerk_rotor_max: 250000  # Maximum rotor jerk [RPM/s^2]
+  num_rotors: 6  # Number of rotors
+
+gain_params:
+  KpPosArray: [2.0, 2.0, 8.5]  # Position proportional gain (optimized for 0.3 m/s)
+  KdPosArray: [1.5, 1.5, 5.5]  # Position derivative gain (increased damping)
+  KiPosArray: [0.001, 0.001, 0.001]  # Position integral gain
+  ITransLimit: [1.0, 1.0, 1.0]  # Translation integral limit
+  KpOriArray: [12.0, 12.0, 2.0]  # Orientation proportional gain (optimized)
+  KdOriArray: [6.5, 6.5, 1.0]  # Orientation derivative gain (increased damping)
+  KiOriArray: [0.01, 0.01, 0.01]  # Orientation integral gain
+  IOriLimit: [1.0, 1.0, 1.0]  # Orientation integral limit
+  AccelMax: [0.5, 0.5, 20.0]  # Maximum acceleration [m/s^2]
+
+trajectory:
+  max_velocity: 0.3  # Maximum average velocity for trajectory generation [m/s]
+  max_yaw_rate: 0.2  # Maximum yaw rate for trajectory generation [rad/s]
+  time_scale: 5.0  # Time scale factor for smoother trajectories (>1.0)
+
+simulation:
+  w_rotor_idle: 2000.0  # Idle rotor speed [RPM]
+  tf: 100.0  # Final time [s]
+  dt: 0.010  # Time step [s]
