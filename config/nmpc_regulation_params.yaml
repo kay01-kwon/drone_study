@@ -1,0 +1,40 @@
+# Drone Simulation Parameters for NMPC Regulation Control
+
+dynamic_params:
+  m: 2.9  # Mass [kg]
+  MoiArray: [0.06, 0.06, 0.09]  # Moment of inertia [kg*m^2]
+  com_offset: [0.0, 0.0, 0.0]  # Center of mass offset [m]
+
+drone_params:
+  arm_length: 0.265  # Arm length [m]
+  motor_const: 1.465e-7  # Motor thrust constant
+  moment_const: 0.01569  # Motor moment constant
+
+rotor_params:
+  p: [25.16687, 0.003933, 515.605]  # Rotor model parameters
+  w_rotor_min: 2000  # Minimum rotor speed [RPM]
+  w_rotor_max: 7200  # Maximum rotor speed [RPM]
+  alpha_rotor_max: 15000  # Maximum rotor acceleration [RPM/s]
+  jerk_rotor_max: 250000  # Maximum rotor jerk [RPM/s^2]
+  num_rotors: 6  # Number of rotors
+
+# NMPC parameters tuned for REGULATION (setpoint stabilization)
+nmpc_params:
+  t_horizon: 0.5  # Shorter horizon for regulation (0.5s)
+  n_nodes: 10  # Fewer nodes needed for regulation
+  # Higher position weights, lower velocity weights for regulation
+  QArray: [ 10.0, 10.0, 20.0,        # px, py, pz (higher for regulation)
+            0.5, 0.5, 2.0,           # vx, vy, vz (lower - want zero velocity)
+            150.0, 150.0, 150.0, 150.0,   # qw, qx, qy, qz (higher for attitude)
+            20.0, 20.0, 20.0 ]       # wx, wy, wz (lower - want zero angular velocity)
+  RArray: [ 50.0 ]  # Control effort weight (lower than tracking)
+
+# Regulation setpoint (where to hover)
+regulation:
+  setpoint_position: [0.0, 0.0, 1.0]  # Hover at [x, y, z] = [0, 0, 1m]
+  setpoint_yaw: 0.0  # Yaw angle in radians
+
+simulation:
+  w_rotor_idle: 2000.0  # Idle rotor speed [RPM]
+  tf: 20.0  # Final time [s] - shorter for regulation test
+  dt: 0.010  # Time step [s]

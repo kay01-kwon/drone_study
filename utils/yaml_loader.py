@@ -78,6 +78,13 @@ def get_trajectory_params(config):
     }
     return trajectory_params
 
+def get_regulation_params(config):
+    regulation_params = {
+        'setpoint_position': np.array(config['regulation']['setpoint_position']),
+        'setpoint_yaw': config['regulation']['setpoint_yaw']
+    }
+    return regulation_params
+
 def get_sim_params(config):
     sim_params = {
         'w_rotor_idle': config['simulation']['w_rotor_idle'],
