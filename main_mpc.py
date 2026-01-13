@@ -5,6 +5,7 @@ from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
 from utils.math_tool import quaternion_to_euler
 from utils import yaml_loader
+from utils.acados_cleanup import cleanup_acados_files
 from nmpc.ocp.S550_simple_ocp import S550SimpleOcp
 from ref_generation.ref_generator import get_reference, unpack_ref
 from custom_ode import custom_rk4
@@ -93,8 +94,8 @@ def main():
         alpha_rotor_hist.append(alpha_rotor.copy())
 
         # NMPC control with trajectory tracking
-        # status, w_cmd = nmpc_control.solve_for_trajectory(s_feedback, t_sim[i])
-        status, w_cmd = nmpc_control.solve(s_feedback, ref)
+        status, w_cmd = nmpc_control.solve_for_trajectory(s_feedback, t_sim[i])
+        # status, w_cmd = nmpc_control.solve(s_feedback, ref)
         t_ode = [t_sim[i], t_sim[i+1]]
 
         # Simulate rotor first
@@ -236,6 +237,8 @@ def main():
     print(f"Mean yaw error: {np.mean(np.abs(yaw_error_deg)):.2f}°")
     print(f"Max yaw error: {np.max(np.abs(yaw_error_deg)):.2f}°")
     print("========================================\n")
+
+    cleanup_acados_files(nmpc_control.get_json_file_name())
 
 if __name__ == '__main__':
     main()
