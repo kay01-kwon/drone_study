@@ -64,9 +64,11 @@ def get_pd_gain_params(config):
 def get_nmpc_params(config):
     nmpc_params = {
         't_horizon': config['nmpc_params']['t_horizon'],
+        'n_nodes': config['nmpc_params']['n_nodes'],
         'QArray': config['nmpc_params']['QArray'],
         'RArray': config['nmpc_params']['RArray'],
     }
+    return nmpc_params
 
 def get_trajectory_params(config):
     trajectory_params = {
