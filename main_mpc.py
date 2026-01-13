@@ -81,7 +81,6 @@ def main():
             ref = get_reference(t_sim[i])
         p_des, v_des, yaw_des, yaw_des_dot = unpack_ref(ref)
 
-
         # Append history
         pos_hist.append(p.copy())
         vel_hist.append(v.copy())
@@ -94,8 +93,8 @@ def main():
         alpha_rotor_hist.append(alpha_rotor.copy())
 
         # NMPC control with trajectory tracking
-        status, w_cmd = nmpc_control.solve_for_trajectory(s_feedback, t_sim[i])
-
+        # status, w_cmd = nmpc_control.solve_for_trajectory(s_feedback, t_sim[i])
+        status, w_cmd = nmpc_control.solve(s_feedback, ref)
         t_ode = [t_sim[i], t_sim[i+1]]
 
         # Simulate rotor first
