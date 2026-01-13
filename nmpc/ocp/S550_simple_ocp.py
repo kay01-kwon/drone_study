@@ -45,7 +45,7 @@ class S550SimpleOcp:
             t_horizon = MpcParam['t_horizon']
             n_nodes = MpcParam['n_nodes']
             Q = 2*np.diag(MpcParam['QArray'])
-            R = 2*np.diag(MpcParam['R']*6)
+            R = 2*MpcParam['RArray'][0]*np.eye(6)
 
 
         self.ocp = AcadosOcp()
@@ -152,7 +152,7 @@ class S550SimpleOcp:
         R_B_W = quaternion_to_rotm(q)
         v_world = R_B_W @ state[3:6]
 
-        state_new = state
+        state_new = state.copy()
         state_new[3:6] = v_world
 
         # Set constraint at the first stage
@@ -222,7 +222,7 @@ class S550SimpleOcp:
         R_B_W = quaternion_to_rotm(q)
         v_world = R_B_W @ state[3:6]
 
-        state_new = state
+        state_new = state.copy()
         state_new[3:6] = v_world
 
         # Set constraint at the first stage
