@@ -60,52 +60,54 @@ def load_parameters(control_type, dob_type):
     """
     Load all necessary parameters from split config files
 
+    IMPORTANT: Separates TRUE parameters (for simulator) from NOMINAL parameters (for control/DOB)
+    - TRUE parameters: Used in simulator to represent the actual system
+    - NOMINAL parameters: Used in controller and DOB (shared between them)
+    This separation allows testing robustness to model uncertainty.
+
     Args:
         control_type: Type of controller ('nmpc' or 'pd')
         dob_type: Type of DOB ('none', 'hgdo', or 'l1')
 
     Returns:
-        Dictionary containing all loaded parameters
+        Dictionary containing all loaded parameters with keys:
+        - true_*: True parameters for simulator
+        - nominal_*: Nominal parameters for controller and DOB
+        - sim_params, trajectory_params, control-specific params, dob_params
     """
     params = {}
 
-    # Load simulator parameters (common for all)
+    # Load TRUE parameters from simulator config (used for simulation model)
     config_sim = yaml_loader.load_yaml('config/simulator/simulator.yaml')
-    params['dynamic_params'] = yaml_loader.get_dynamic_params(config_sim)
-    params['drone_params'] = yaml_loader.get_drone_params(config_sim)
-    params['rotor_params'] = yaml_loader.get_rotor_params(config_sim)
+    params['true_dynamic_params'] = yaml_loader.get_dynamic_params(config_sim)
+    params['true_drone_params'] = yaml_loader.get_drone_params(config_sim)
+    params['true_rotor_params'] = yaml_loader.get_rotor_params(config_sim)
     params['sim_params'] = yaml_loader.get_sim_params(config_sim)
 
     # Load trajectory parameters (common for trajectory tracking)
     config_traj = yaml_loader.load_yaml('config/trajectory/trajectory.yaml')
     params['trajectory_params'] = yaml_loader.get_trajectory_params(config_traj)
 
-    # Load control-specific parameters
+    # Load NOMINAL parameters from control config (used for controller AND DOB)
     if control_type == 'nmpc':
         config_control = yaml_loader.load_yaml('config/control/nmpc/nmpc_params.yaml')
         params['nmpc_params'] = yaml_loader.get_nmpc_params(config_control)
 
-        # Override dynamic params from control config if they exist
-        if 'dynamic_params' in config_control:
-            params['dynamic_params'] = yaml_loader.get_dynamic_params(config_control)
-        if 'drone_params' in config_control:
-            params['drone_params'] = yaml_loader.get_drone_params(config_control)
-        if 'rotor_params' in config_control:
-            params['rotor_params'] = yaml_loader.get_rotor_params(config_control)
+        # Load nominal dynamic params from control config
+        params['nominal_dynamic_params'] = yaml_loader.get_dynamic_params(config_control)
+        params['nominal_drone_params'] = yaml_loader.get_drone_params(config_control)
+        params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
 
     elif control_type == 'pd':
         config_control = yaml_loader.load_yaml('config/control/pd/pd_params.yaml')
         params['gain_params'] = yaml_loader.get_pd_gain_params(config_control)
 
-        # Override dynamic params from control config if they exist
-        if 'dynamic_params' in config_control:
-            params['dynamic_params'] = yaml_loader.get_dynamic_params(config_control)
-        if 'drone_params' in config_control:
-            params['drone_params'] = yaml_loader.get_drone_params(config_control)
-        if 'rotor_params' in config_control:
-            params['rotor_params'] = yaml_loader.get_rotor_params(config_control)
+        # Load nominal dynamic params from control config
+        params['nominal_dynamic_params'] = yaml_loader.get_dynamic_params(config_control)
+        params['nominal_drone_params'] = yaml_loader.get_drone_params(config_control)
+        params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
 
-    # Load DOB-specific parameters
+    # Load DOB-specific parameters (DOB will use nominal params from control config)
     if dob_type == 'hgdo':
         config_dob = yaml_loader.load_yaml('config/estimator/dob/hgdo.yaml')
         params['dob_params'] = yaml_loader.get_hgdo_params(config_dob)
@@ -120,23 +122,26 @@ def setup_controller(control_type, dob_type, params):
     """
     Setup the appropriate controller and disturbance observer
 
+    IMPORTANT: Both controller and DOB use NOMINAL parameters (not true parameters)
+    This ensures they share the same system model.
+
     Args:
         control_type: Type of controller ('nmpc' or 'pd')
         dob_type: Type of DOB ('none', 'hgdo', or 'l1')
-        params: Dictionary of parameters
+        params: Dictionary of parameters (must contain nominal_* parameters)
 
     Returns:
-        controller: The control object
-        dob: Disturbance observer (if applicable, otherwise None)
+        controller: The control object (uses nominal parameters)
+        dob: Disturbance observer (uses nominal parameters, or None)
     """
     dob = None
 
-    # Setup controller
+    # Setup controller using NOMINAL parameters
     if control_type == 'nmpc':
         from control.nmpc.ocp.S550_simple_ocp import S550SimpleOcp
 
-        controller = S550SimpleOcp(DynParam=params['dynamic_params'],
-                                   DroneParam=params['drone_params'],
+        controller = S550SimpleOcp(DynParam=params['nominal_dynamic_params'],
+                                   DroneParam=params['nominal_drone_params'],
                                    MpcParam=params['nmpc_params'])
 
     elif control_type == 'pd':
@@ -144,27 +149,27 @@ def setup_controller(control_type, dob_type, params):
 
         # DobMode = True if dob_type is not 'none'
         use_dob = (dob_type != 'none')
-        controller = GeometricControl(DynamicParams=params['dynamic_params'],
+        controller = GeometricControl(DynamicParams=params['nominal_dynamic_params'],
                                      GainParams=params['gain_params'],
                                      DobMode=use_dob)
     else:
         raise ValueError(f"Unknown control type: {control_type}")
 
-    # Setup disturbance observer
+    # Setup disturbance observer using NOMINAL parameters (same as controller)
     if dob_type == 'hgdo':
         from estimator.dob.hgdo.hgdo import HGDO
 
-        dob = HGDO(DynParam=params['dynamic_params'],
-                   DroneParam=params['drone_params'],
-                   RotorParam=params['rotor_params'],
+        dob = HGDO(DynParam=params['nominal_dynamic_params'],
+                   DroneParam=params['nominal_drone_params'],
+                   RotorParam=params['nominal_rotor_params'],
                    DobParam=params['dob_params'])
 
     elif dob_type == 'l1':
         from estimator.dob.l1_adaptation.l1_adaptation import L1Adaptation
 
-        dob = L1Adaptation(DynParam=params['dynamic_params'],
-                          DroneParam=params['drone_params'],
-                          RotorParam=params['rotor_params'],
+        dob = L1Adaptation(DynParam=params['nominal_dynamic_params'],
+                          DroneParam=params['nominal_drone_params'],
+                          RotorParam=params['nominal_rotor_params'],
                           DobParam=params['dob_params'])
 
     elif dob_type == 'none':
@@ -347,11 +352,16 @@ Examples:
     # Load all parameters from split config files
     params = load_parameters(control_type, dob_type)
 
-    # Create simulation models
-    drone_sim_model = S550_Sim_Model(DynamicParams=params['dynamic_params'])
-    rotor_sim_model = RotorModel(RotorParams=params['rotor_params'])
-    hexa_converter = HexaConverter(DroneParams=params['drone_params'],
-                                   RotorParams=params['rotor_params'])
+    print("Parameter Configuration:")
+    print("- Simulator: Uses TRUE parameters from config/simulator/simulator.yaml")
+    print(f"- Controller & DOB: Use NOMINAL parameters from config/control/{control_type}/")
+    print("  (Controller and DOB share the same nominal model)\n")
+
+    # Create simulation models using TRUE parameters (actual system)
+    drone_sim_model = S550_Sim_Model(DynamicParams=params['true_dynamic_params'])
+    rotor_sim_model = RotorModel(RotorParams=params['true_rotor_params'])
+    hexa_converter = HexaConverter(DroneParams=params['true_drone_params'],
+                                   RotorParams=params['true_rotor_params'])
 
     # Setup controller and DOB
     controller, dob = setup_controller(control_type, dob_type, params)
