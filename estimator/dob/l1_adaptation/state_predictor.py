@@ -27,7 +27,8 @@ class StatePredictor:
         self.v_world = np.zeros(3)
         self.w = np.zeros(3)
 
-        # sigma 0~3: matched uncertainties, 4~5: unmatched uncertainties
+        # sigma 0~3: matched uncertainties (thrust, moments)
+        # sigma 4~5: unmatched uncertainties (lateral forces in body frame)
         self.sigma = np.zeros(6)
 
         g = -9.81
@@ -62,7 +63,6 @@ class StatePredictor:
     def _dynamics(self, t, z, u_rot):
 
         # Unpack matched and unmatched uncertainties
-        # from packed uncertainties
         sigma_m, sigma_un = self._unpack_sigma()
         # Get transformed v (World) and w
         z = self._get_z()
@@ -83,15 +83,17 @@ class StatePredictor:
         e_y_b = R[:,1]
         e_z_b = R[:,2]
 
-        # f(R_b_w)
+        # f(R_b_w) in world frame
         f[0:3] = self.g_vec + T_rot/self.m*e_z_b
         f[3:] = self.J_inv @ (M_rot - coupling)
 
+        # Matched uncertainties: thrust (body z) and moments
         g[0:3,0] = 1.0/self.m * e_z_b
         g[3:6,1:4] = self.J_inv
 
-        g_perp[0:3,0] = 1.0 / self.m * e_x_b
-        g_perp[0:3,1] = 1.0 / self.m * e_y_b
+        # Unmatched uncertainties: lateral forces in body frame (like C++)
+        g_perp[0:3,0] = 1.0/self.m * e_x_b
+        g_perp[0:3,1] = 1.0/self.m * e_y_b
 
         z_tilde = self.z_hat - z
 
@@ -114,9 +116,9 @@ class StatePredictor:
         return np.concatenate([self.v_world, self.w])
 
     def _unpack_sigma(self):
-        """Unpack uncertainty"""
+        """Unpack matched and unmatched uncertainties"""
         sigma_m = self.sigma[0:4]
-        sigma_un = self.sigma[4:]
+        sigma_un = self.sigma[4:6]
         return sigma_m, sigma_un
 
 
