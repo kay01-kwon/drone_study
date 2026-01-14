@@ -51,9 +51,12 @@ class L1Adaptation:
         sigma_tau = np.array([self.sigma_hat[1], self.sigma_hat[2], self.sigma_hat[3]])
 
         dt = t_curr - t_prev
-        sigma_f_lpf = self.trans_lpf_obj.do_filter(sigma_f, dt)
-        self.sigma_f_lpf = np.array([0.0, 0.0, sigma_f_lpf[2]])
-        self.sigma_tau_lpf = self.trans_lpf_obj.do_filter(sigma_tau, dt)
+
+        # Process translational disturbance through low pass filter
+        self.sigma_f_lpf = self.trans_lpf_obj.do_filter(sigma_f, dt)
+
+        # Process rotational disturbance through low pass filter
+        self.sigma_tau_lpf = self.rot_lpf_obj.do_filter(sigma_tau, dt)
 
         return np.concatenate([self.sigma_f_lpf, self.sigma_tau_lpf])
 
