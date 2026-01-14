@@ -47,20 +47,34 @@ class L1Adaptation:
 
         self.sigma_hat = self.adaptation_law.update(t_prev, t_curr, z_tilde, state)
 
-        # Extract disturbances - only matched uncertainties (thrust and moments)
-        # Lateral forces cannot be compensated in underactuated multirotor
-        # sigma_hat[0]: thrust, sigma_hat[1:4]: moments, sigma_hat[4:6]: always zero
-        # Return format: [fx, fy, fz] in body frame to match geometric_control
-        sigma_f_raw = np.array([0.0, 0.0, self.sigma_hat[0]])  # Only thrust (fz)
-        sigma_tau_raw = np.array([self.sigma_hat[1], self.sigma_hat[2], self.sigma_hat[3]])
+        # Extract disturbances:
+        # sigma_hat[0]: thrust in body z
+        # sigma_hat[1:4]: moments in body frame
+        # sigma_hat[4:6]: lateral forces in world x, y
+
+        # Get rotation matrix to transform between frames
+        q = state[6:10]
+        R_b_w = quaternion_to_rotm(q)
+
+        # Construct force in world frame (like HGDO)
+        # Thrust component: body z direction transformed to world
+        f_thrust_w = R_b_w @ np.array([0.0, 0.0, self.sigma_hat[0]])
+        # Lateral components: world x, y directions
+        f_lateral_w = np.array([self.sigma_hat[4], self.sigma_hat[5], 0.0])
+        # Total force in world frame
+        f_ext_w = f_thrust_w + f_lateral_w
+
+        # Transform to body frame (like HGDO line 72)
+        f_ext_b = R_b_w.T @ f_ext_w
+
+        # Moments are already in body frame
+        tau_ext_b = np.array([self.sigma_hat[1], self.sigma_hat[2], self.sigma_hat[3]])
 
         dt = t_curr - t_prev
 
-        # Process translational disturbance through low pass filter
-        self.sigma_f_lpf = self.trans_lpf_obj.do_filter(sigma_f_raw, dt)
-
-        # Process rotational disturbance through low pass filter
-        self.sigma_tau_lpf = self.rot_lpf_obj.do_filter(sigma_tau_raw, dt)
+        # Process disturbances through low pass filter
+        self.sigma_f_lpf = self.trans_lpf_obj.do_filter(f_ext_b, dt)
+        self.sigma_tau_lpf = self.rot_lpf_obj.do_filter(tau_ext_b, dt)
 
         return np.concatenate([self.sigma_f_lpf, self.sigma_tau_lpf])
 
