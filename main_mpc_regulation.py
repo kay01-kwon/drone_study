@@ -197,17 +197,17 @@ def main():
     axs[1, 1].legend()
     axs[1, 1].grid(True)
 
-    # Position Error (3D norm)
-    axs[1, 2].plot(t_plot, pos_error_hist, 'b-', linewidth=2)
-    axs[1, 2].axhline(y=settling_threshold, color='r', linestyle='--', alpha=0.5, label='Settling threshold')
-    if settling_time is not None:
-        axs[1, 2].axvline(x=settling_time, color='g', linestyle='--', alpha=0.5, label=f'Settling time: {settling_time:.2f}s')
-    axs[1, 2].set_xlabel('Time [s]')
-    axs[1, 2].set_ylabel('Position Error [m]')
-    axs[1, 2].set_title('Position Error Norm')
-    axs[1, 2].legend()
-    axs[1, 2].grid(True)
-    axs[1, 2].set_yscale('log')
+    # # Position Error (3D norm)
+    # axs[1, 2].plot(t_plot, pos_error_hist, 'b-', linewidth=2)
+    # axs[1, 2].axhline(y=settling_threshold, color='r', linestyle='--', alpha=0.5, label='Settling threshold')
+    # if settling_time is not None:
+    #     axs[1, 2].axvline(x=settling_time, color='g', linestyle='--', alpha=0.5, label=f'Settling time: {settling_time:.2f}s')
+    # axs[1, 2].set_xlabel('Time [s]')
+    # axs[1, 2].set_ylabel('Position Error [m]')
+    # axs[1, 2].set_title('Position Error Norm')
+    # axs[1, 2].legend()
+    # axs[1, 2].grid(True)
+    # axs[1, 2].set_yscale('log')
 
     # 3D Trajectory
     ax_3d = fig.add_subplot(3, 3, 6, projection='3d')

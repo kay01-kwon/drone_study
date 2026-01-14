@@ -6,6 +6,7 @@ from utils.drone_converter import HexaConverter
 from utils.math_tool import quaternion_to_euler
 from utils import yaml_loader
 from PID.geometric_control import GeometricControl
+from dob.hgdo.hgdo import HGDO
 from ref_generation.ref_generator import get_reference, unpack_ref
 from custom_ode import custom_rk4
 
@@ -36,6 +37,10 @@ def main():
     trajectory_params = yaml_loader.get_trajectory_params(config)
     sim_params = yaml_loader.get_sim_params(config)
 
+    config_dob = yaml_loader.load_yaml('config/hgdo.yaml')
+    hgdo_params = yaml_loader.get_hgdo_params(config_dob)
+
+    # Load parameters to the objects
     drone_sim_model = S550_Sim_Model(DynamicParams=dynamic_params)
     rotor_sim_model = RotorModel(RotorParams=rotor_params)
     hexa_converter = HexaConverter(DroneParams=drone_params,
@@ -43,6 +48,10 @@ def main():
     geometric_control = GeometricControl(DynamicParams=dynamic_params,
                                    GainParams=gain_params,
                                    DobMode=True)
+    hgdo_obj = HGDO(DynParam=dynamic_params,
+                    DroneParam=drone_params,
+                    RotorParam=rotor_params,
+                    DobParam=hgdo_params)
 
     # State initialization
     w_rotor_idle = sim_params['w_rotor_idle']
@@ -93,8 +102,13 @@ def main():
         w_rotor_hist.append(w_rotor.copy())
         alpha_rotor_hist.append(alpha_rotor.copy())
 
-        # Geometric control
-        u = geometric_control.compute_u(s_feedback, ref)
+        if i > 1:
+            disturbance_estimate = hgdo_obj.dob_estimate(t_sim[i-1], t_sim[i],
+                                                        s_rotor[:6], s_feedback)
+            u = geometric_control.compute_u(s_feedback, ref, disturbance_estimate)
+        else:
+            u = geometric_control.compute_u(s_feedback, ref)
+
 
         w_cmd = hexa_converter.compute_des_rotor_speed(u)
 

@@ -20,14 +20,14 @@ rotor_params:
 
 # NMPC parameters tuned for REGULATION (setpoint stabilization)
 nmpc_params:
-  t_horizon: 0.5  # Shorter horizon for regulation (0.5s)
-  n_nodes: 10  # Fewer nodes needed for regulation
+  t_horizon: 1.0  # Shorter horizon for regulation (0.5s)
+  n_nodes: 20  # Fewer nodes needed for regulation
   # Higher position weights, lower velocity weights for regulation
-  QArray: [ 10.0, 10.0, 20.0,        # px, py, pz (higher for regulation)
-            0.5, 0.5, 2.0,           # vx, vy, vz (lower - want zero velocity)
-            150.0, 150.0, 150.0, 150.0,   # qw, qx, qy, qz (higher for attitude)
-            20.0, 20.0, 20.0 ]       # wx, wy, wz (lower - want zero angular velocity)
-  RArray: [ 50.0 ]  # Control effort weight (lower than tracking)
+  QArray: [ 2.0, 2.0, 10.0,        # px, py, pz (higher for regulation)
+            1.0, 1.0, 7.0,           # vx, vy, vz (lower - want zero velocity)
+            10.0, 10.0, 10.0, 10.0,   # qw, qx, qy, qz (higher for attitude)
+            5.0, 5.0, 5.0 ]       # wx, wy, wz (lower - want zero angular velocity)
+  RArray: [ 1.0 ]  # Control effort weight (lower than tracking)
 
 # Regulation setpoint (where to hover)
 regulation:

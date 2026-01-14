@@ -17,8 +17,8 @@ WAYPOINTS = [
 YAW_ANGLES = [
     0.0,           # Start facing forward (0°)
     0.0,           # Maintain orientation during takeoff
-    np.pi/20,       # Turn 45° at [0.5, 0.5, 1.5]
-    np.pi/20,      # Turn 45° at [0.5, -0.5, 1.0]
+    0.0,       # Turn 9° at [0.5, 0.5, 1.5]
+    0.0,      # Turn 9° at [0.5, -0.5, 1.0]
     0.0            # Return to forward orientation
 ]
 
