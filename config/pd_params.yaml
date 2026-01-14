@@ -3,7 +3,7 @@
 dynamic_params:
   m: 2.9  # Mass [kg]
   MoiArray: [0.06, 0.06, 0.09]  # Moment of inertia [kg*m^2]
-  com_offset: [0.0, 0.0, 0.0]  # Center of mass offset [m]
+  com_offset: [0.01, 0.02, 0.0]  # Center of mass offset [m]
 
 drone_params:
   arm_length: 0.265  # Arm length [m]

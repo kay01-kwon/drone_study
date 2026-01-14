@@ -92,3 +92,14 @@ def get_sim_params(config):
         'dt': config['simulation']['dt']
     }
     return sim_params
+
+def get_hgdo_params(config):
+    hgdo_params = {
+        'eps_f': config['dob']['eps_f'],
+        'eps_tau': config['dob']['eps_tau'],
+        'lin_vel_cutoff': config['lpf']['lin_vel_cutoff'],
+        'ang_vel_cutoff': config['lpf']['ang_vel_cutoff'],
+        'disturbance_force_cutoff': config['lpf']['disturbance_force_cutoff'],
+        'disturbance_torque_cutoff': config['lpf']['disturbance_torque_cutoff']
+    }
+    return hgdo_params
