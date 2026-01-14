@@ -3,7 +3,7 @@
 dynamic_params:
   m: 2.9  # Mass [kg]
   MoiArray: [0.06, 0.06, 0.09]  # Moment of inertia [kg*m^2]
-  com_offset: [0.01, 0.02, 0.0]  # Center of mass offset [m]
+  com_offset: [0.02, 0.03, 0.0]  # Center of mass offset [m]
 
 drone_params:
   arm_length: 0.265  # Arm length [m]
@@ -23,8 +23,8 @@ gain_params:
   KdPosArray: [1.5, 1.5, 5.5]  # Position derivative gain (increased damping)
   KiPosArray: [0.001, 0.001, 0.001]  # Position integral gain
   ITransLimit: [1.0, 1.0, 1.0]  # Translation integral limit
-  KpOriArray: [12.0, 12.0, 2.0]  # Orientation proportional gain (optimized)
-  KdOriArray: [6.5, 6.5, 1.0]  # Orientation derivative gain (increased damping)
+  KpOriArray: [20.0, 20.0, 2.0]  # Orientation proportional gain (optimized)
+  KdOriArray: [10.5, 10.5, 1.0]  # Orientation derivative gain (increased damping)
   KiOriArray: [0.01, 0.01, 0.01]  # Orientation integral gain
   IOriLimit: [1.0, 1.0, 1.0]  # Orientation integral limit
   AccelMax: [0.5, 0.5, 20.0]  # Maximum acceleration [m/s^2]

@@ -85,7 +85,7 @@ class HGDO:
         # acceleration input in World frame
         u_T = R_b_w @ f_input / self.m
 
-        gamma_trans_dot = (-1.0/self.eps_f*(gamma_trans + 1.0/self.eps_tau*self.v_world)
+        gamma_trans_dot = (-1.0/self.eps_f*(gamma_trans + 1.0/self.eps_f*self.v_world)
                            +1.0/self.eps_f*(-u_T - self.g_vec))
 
         return gamma_trans_dot
@@ -95,8 +95,10 @@ class HGDO:
         Jw = self.J @ self.w
         inertial_effect = self.J_inv @ np.cross(self.w, Jw)
 
+        u_M = self.J_inv @ u[1:]
+
         gamma_rot_dot = (-1.0/self.eps_tau*(gamma_rot + 1.0/self.eps_tau*self.w)
-                         + 1.0/self.eps_tau*(-u[1:] + inertial_effect))
+                         + 1.0/self.eps_tau*(-u_M + inertial_effect))
         return gamma_rot_dot
 
     def _unpack_state(self, state):
