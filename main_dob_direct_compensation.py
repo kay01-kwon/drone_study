@@ -180,7 +180,8 @@ def setup_controller(control_type, dob_type, params):
     return controller, dob
 
 
-def plot_results(control_type, dob_type, t_plot, pos_hist, vel_hist, pos_des_hist,
+def plot_results(control_type, dob_type, t_plot,
+                 pos_hist, vel_hist, pos_des_hist,
                 roll_hist, pitch_hist, yaw_hist, yaw_des_hist,
                 w_rotor_hist, alpha_rotor_hist):
     """
@@ -287,6 +288,30 @@ def plot_results(control_type, dob_type, t_plot, pos_hist, vel_hist, pos_des_his
     plt.tight_layout()
     plt.show()
 
+def plot_disturbance_estimate_result(t_plot, f_est_hist, tau_est_hist):
+    """
+    Plot disturbance estimate results
+    """
+    fig, axs = plt.subplots(1, 2, figsize=(18, 12))
+
+    axs[0].plot(t_plot, f_est_hist[:, 0], 'r-', label=r'$f_{est,x}$', linewidth=2)
+    axs[0].plot(t_plot, f_est_hist[:, 1], 'g-', label=r'$f_{est,y}$', linewidth=2)
+    axs[0].plot(t_plot, f_est_hist[:, 2], 'b-', label=r'$f_{est,z}$', linewidth=2)
+    axs[0].set_xlabel('Time [s]')
+    axs[0].set_ylabel('Estimated force [N]')
+    axs[0].legend()
+    axs[0].grid(True)
+
+    axs[1].plot(t_plot, tau_est_hist[:, 0], 'r-', label=r'$\tau_{est,x}$', linewidth=2)
+    axs[1].plot(t_plot, tau_est_hist[:, 1], 'g-', label=r'$\tau_{est,y}$', linewidth=2)
+    axs[1].plot(t_plot, tau_est_hist[:, 2], 'b-', label=r'$\tau_{est,z}$', linewidth=2)
+    axs[1].set_xlabel('Time [s]')
+    axs[1].set_ylabel('Estimated moment [Nm]')
+    axs[1].legend()
+    axs[1].grid(True)
+
+    plt.tight_layout()
+    plt.show()
 
 def print_statistics(control_type, dob_type, pos_hist, vel_hist, pos_des_hist,
                     yaw_hist, yaw_des_hist):
@@ -386,6 +411,8 @@ Examples:
     yaw_des_hist = []
     w_rotor_hist = []
     alpha_rotor_hist = []
+    f_est_hist = []
+    tau_est_hist = []
 
     # Main simulation loop
     from ref_generation.ref_generator import get_reference, unpack_ref
@@ -420,6 +447,11 @@ Examples:
                                                     s_rotor[:6], s_feedback)
         else:
             disturbance_estimate = np.zeros(6)
+
+        f_est = disturbance_estimate[0:3]
+        tau_est = disturbance_estimate[3:6]
+        f_est_hist.append(f_est.copy())
+        tau_est_hist.append(tau_est.copy())
 
         # Compute control
         if control_type == 'nmpc':
@@ -475,6 +507,12 @@ Examples:
     plot_results(control_type, dob_type, t_plot, pos_hist, vel_hist, pos_des_hist,
                 roll_hist, pitch_hist, yaw_hist, yaw_des_hist,
                 w_rotor_hist, alpha_rotor_hist)
+
+    # Plot disturbance estimate if dob mode
+    if dob is not None:
+        f_est_hist = np.array(f_est_hist)
+        tau_est_hist = np.array(tau_est_hist)
+        plot_disturbance_estimate_result(t_plot, f_est_hist, tau_est_hist)
 
     # Print statistics
     print_statistics(control_type, dob_type, pos_hist, vel_hist, pos_des_hist,

@@ -39,7 +39,7 @@ class HGDO:
 
         :param state:
         :param rotor_speed:
-        :return:
+        :return: [f_ext, tau_ext]
         """
         # Unpack state from state vector
         p, v, q, w = self._unpack_state(state)
