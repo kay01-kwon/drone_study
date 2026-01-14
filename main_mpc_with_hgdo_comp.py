@@ -101,7 +101,6 @@ def main():
         # Simulate rotor first
         s_rotor = custom_rk4.do_step(rotor_sim_model.dynamics,
                                      s_rotor, w_cmd, t_ode)
-
         # Convert from actual rotor speed to control input
         u = hexa_converter.compute_u(s_rotor[0:6])
         # Simulate drone
