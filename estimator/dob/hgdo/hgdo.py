@@ -1,5 +1,5 @@
 import numpy as np
-from custom_ode import custom_rk4
+from utils.custom_ode import custom_rk4
 from utils.math_tool import quaternion_to_rotm
 from utils.drone_converter import HexaConverter
 
@@ -59,7 +59,7 @@ class HGDO:
 
         # Solve translational gamma dynamics
         self.gamma_trans = custom_rk4.do_step(self._gamma_trans_dynamics,
-                                            self.gamma_trans, u, t_ode)
+                                              self.gamma_trans, u, t_ode)
 
         # Solve rotational gamma dynamics
         self.gamma_rot = custom_rk4.do_step(self._gamma_rot_dynamics,

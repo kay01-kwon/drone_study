@@ -5,10 +5,10 @@ from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
 from utils.math_tool import quaternion_to_euler
 from utils import yaml_loader
-from PID.geometric_control import GeometricControl
-from dob.hgdo.hgdo import HGDO
+from control.PID.geometric_control import GeometricControl
+from estimator.dob.hgdo.hgdo import HGDO
 from ref_generation.ref_generator import get_reference, unpack_ref
-from custom_ode import custom_rk4
+from utils.custom_ode import custom_rk4
 
 from matplotlib import pyplot as plt
 
