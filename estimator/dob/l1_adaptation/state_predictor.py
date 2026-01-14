@@ -28,7 +28,7 @@ class StatePredictor:
         self.w = np.zeros(3)
 
         # sigma 0~3: matched uncertainties (thrust, moments)
-        # sigma 4~5: unmatched uncertainties (lateral forces in world frame)
+        # sigma 4~5: unmatched uncertainties (lateral forces in body frame)
         self.sigma = np.zeros(6)
 
         g = -9.81
@@ -79,11 +79,9 @@ class StatePredictor:
         coupling = np.cross(self.w, Jw)
 
         # Get Basis from rotation matrix
+        e_x_b = R[:,0]
+        e_y_b = R[:,1]
         e_z_b = R[:,2]
-
-        # World frame basis for lateral forces
-        e_x_w = np.array([1.0, 0.0, 0.0])
-        e_y_w = np.array([0.0, 1.0, 0.0])
 
         # f(R_b_w) in world frame
         f[0:3] = self.g_vec + T_rot/self.m*e_z_b
@@ -93,9 +91,9 @@ class StatePredictor:
         g[0:3,0] = 1.0/self.m * e_z_b
         g[3:6,1:4] = self.J_inv
 
-        # Unmatched uncertainties: lateral forces in world frame
-        g_perp[0:3,0] = 1.0/self.m * e_x_w
-        g_perp[0:3,1] = 1.0/self.m * e_y_w
+        # Unmatched uncertainties: lateral forces in body frame (like C++)
+        g_perp[0:3,0] = 1.0/self.m * e_x_b
+        g_perp[0:3,1] = 1.0/self.m * e_y_b
 
         z_tilde = self.z_hat - z
 

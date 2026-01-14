@@ -47,27 +47,16 @@ class L1Adaptation:
 
         self.sigma_hat = self.adaptation_law.update(t_prev, t_curr, z_tilde, state)
 
-        # Extract disturbances:
+        # Extract disturbances (all in body frame, matching C++ implementation):
         # sigma_hat[0]: thrust in body z
         # sigma_hat[1:4]: moments in body frame
-        # sigma_hat[4:6]: lateral forces in world x, y
+        # sigma_hat[4:6]: lateral forces in body x, y
 
-        # Get rotation matrix to transform between frames
-        q = state[6:10]
-        R_b_w = quaternion_to_rotm(q)
+        # Construct force in body frame directly (no transformation needed)
+        # Since all sigma components are estimated in body frame
+        f_ext_b = np.array([self.sigma_hat[4], self.sigma_hat[5], self.sigma_hat[0]])
 
-        # Construct force in world frame (like HGDO)
-        # Thrust component: body z direction transformed to world
-        f_thrust_w = R_b_w @ np.array([0.0, 0.0, self.sigma_hat[0]])
-        # Lateral components: world x, y directions
-        f_lateral_w = np.array([self.sigma_hat[4], self.sigma_hat[5], 0.0])
-        # Total force in world frame
-        f_ext_w = f_thrust_w + f_lateral_w
-
-        # Transform to body frame (like HGDO line 72)
-        f_ext_b = R_b_w.T @ f_ext_w
-
-        # Moments are already in body frame
+        # Moments are in body frame
         tau_ext_b = np.array([self.sigma_hat[1], self.sigma_hat[2], self.sigma_hat[3]])
 
         dt = t_curr - t_prev
