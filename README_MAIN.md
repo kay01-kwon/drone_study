@@ -58,17 +58,17 @@ The unified main program:
 Initializes drone and rotor states. Supports optional initial position offset.
 
 ### `load_parameters(control_type, dob_type)`
-Loads all necessary parameters from split config files:
-- Reads common parameters from `simulator.yaml` and `trajectory.yaml`
-- Loads control-specific parameters (NMPC or PD)
-- Loads DOB-specific parameters if applicable
-- Returns a dictionary containing all loaded parameters
+Loads all necessary parameters from split config files with TRUE/NOMINAL separation:
+- Loads **TRUE** parameters from `simulator.yaml` for simulation
+- Loads **NOMINAL** parameters from control config for controller & DOB
+- Loads trajectory parameters and DOB-specific tuning parameters
+- Returns dictionary with `true_*` and `nominal_*` parameter sets
 
 ### `setup_controller(control_type, dob_type, params)`
-Creates the appropriate controller and disturbance observer:
-- Initializes controller based on `control_type`
-- Initializes DOB based on `dob_type` (if not 'none')
-- Returns controller and dob objects
+Creates the appropriate controller and disturbance observer using **NOMINAL** parameters:
+- Initializes controller with `nominal_dynamic_params`
+- Initializes DOB with the **same** `nominal_dynamic_params` (shared model)
+- Returns controller and dob objects (both using identical nominal model)
 
 ### `plot_results(control_type, dob_type, ...)`
 Generates standardized plots with control/DOB info in title.
@@ -80,22 +80,56 @@ Prints performance statistics including control and DOB types.
 
 Config files are now **modularly organized** in subdirectories:
 
-### Common Parameters
-- `config/simulator/simulator.yaml` - Dynamic parameters, drone parameters, rotor parameters, simulation settings
-- `config/trajectory/trajectory.yaml` - Trajectory generation parameters
+### TRUE Parameters (Simulator)
+- `config/simulator/simulator.yaml` - **TRUE** dynamic parameters for actual system simulation
+  - Dynamic parameters (mass, inertia, COM offset)
+  - Drone parameters (arm length, motor constants)
+  - Rotor parameters (model, limits)
+  - Simulation settings (time step, duration)
 
-### Control-Specific Parameters
-- `config/control/nmpc/nmpc_params.yaml` - NMPC controller parameters
-- `config/control/pd/pd_params.yaml` - PD/Geometric controller gains
+### NOMINAL Parameters (Control & DOB)
+- `config/control/nmpc/nmpc_params.yaml` - **NOMINAL** parameters for NMPC controller
+  - Dynamic, drone, and rotor parameters (controller's model)
+  - NMPC-specific parameters (horizon, nodes, weights)
+- `config/control/pd/pd_params.yaml` - **NOMINAL** parameters for PD controller
+  - Dynamic, drone, and rotor parameters (controller's model)
+  - PD gains (Kp, Kd, Ki)
 
 ### Disturbance Observer Parameters
-- `config/estimator/dob/hgdo.yaml` - High Gain DOB parameters
-- `config/estimator/dob/l1_adaptive.yaml` - L1 Adaptive Control parameters
+- `config/estimator/dob/hgdo.yaml` - High Gain DOB parameters (uses nominal params from control)
+- `config/estimator/dob/l1_adaptive.yaml` - L1 Adaptive Control parameters (uses nominal params from control)
+
+### Trajectory Parameters
+- `config/trajectory/trajectory.yaml` - Trajectory generation parameters
+
+## TRUE vs NOMINAL Parameters
+
+**CRITICAL DISTINCTION:**
+
+### TRUE Parameters (Simulator)
+- **Used by:** `S550_Sim_Model`, `RotorModel`, `HexaConverter`
+- **Purpose:** Represent the **actual physical system** being simulated
+- **Source:** `config/simulator/simulator.yaml`
+- **Can differ from nominal** to test robustness to model uncertainty
+
+### NOMINAL Parameters (Controller & DOB)
+- **Used by:** Controller (NMPC/PD) **AND** DOB (HGDO/L1)
+- **Purpose:** Represent the **controller's model** of the system
+- **Source:** `config/control/{nmpc,pd}/*.yaml`
+- **MUST be identical** for both controller and DOB (shared model)
+
+### Why This Matters
+
+This separation allows testing:
+- **Model uncertainty** - When true ≠ nominal parameters
+- **Robustness** - Controller performance under parameter mismatch
+- **DOB effectiveness** - Ability to compensate for modeling errors
 
 ### Parameter Loading Logic
-1. Load common parameters from `simulator.yaml` and `trajectory.yaml`
-2. Load control-specific parameters and override if present
-3. Load DOB-specific parameters if DOB is enabled
+1. Load **TRUE** parameters from `simulator.yaml` → used for simulation models
+2. Load **NOMINAL** parameters from control config → used for controller **AND** DOB
+3. Load DOB-specific tuning parameters (cutoff frequencies, gains, etc.)
+4. Controller and DOB share the same nominal model (consistency guarantee)
 
 ## Benefits of Unified Architecture
 
