@@ -36,17 +36,17 @@ class AdaptationLaw:
         q = self._get_quaternion_from_state(state)
         R_b_w = quaternion_to_rotm(q)
 
-        # Extract basis from rotation matrix
-        e_x_b = R_b_w[:,0]
-        e_y_b = R_b_w[:,1]
+        # Extract basis from rotation matrix (only need z-axis for thrust)
         e_z_b = R_b_w[:,2]
 
         G_inv = np.zeros((6,6))
 
+        # Only estimate matched uncertainties (thrust and moments)
+        # Lateral forces cannot be compensated in underactuated system
         G_inv[0,0:3] = self.m * e_z_b.T
         G_inv[1:4,3:6] = self.J
-        G_inv[4,0:3] = self.m * e_x_b.T
-        G_inv[5,0:3] = self.m * e_y_b.T
+        # G_inv[4,:] = 0  # Don't estimate Fx
+        # G_inv[5,:] = 0  # Don't estimate Fy
 
         self.sigma_hat = -G_inv @ Phi_inv @ mu
 

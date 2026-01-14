@@ -27,7 +27,8 @@ class StatePredictor:
         self.v_world = np.zeros(3)
         self.w = np.zeros(3)
 
-        # sigma 0~3: matched uncertainties, 4~5: unmatched uncertainties
+        # sigma 0: thrust uncertainty, 1-3: moment uncertainties
+        # sigma 4-5: not used (lateral forces not estimated for underactuated system)
         self.sigma = np.zeros(6)
 
         g = -9.81
@@ -61,16 +62,15 @@ class StatePredictor:
 
     def _dynamics(self, t, z, u_rot):
 
-        # Unpack matched and unmatched uncertainties
-        # from packed uncertainties
-        sigma_m, sigma_un = self._unpack_sigma()
+        # Unpack matched uncertainties only (thrust and moments)
+        # Unmatched uncertainties (lateral forces) are not used
+        sigma_m = self._unpack_sigma()
         # Get transformed v (World) and w
         z = self._get_z()
 
         # Allocate memory first
         f = np.zeros((6,))
         g = np.zeros((6,4))
-        g_perp = np.zeros((6,2))
 
         T_rot = u_rot[0]
         M_rot = u_rot[1:]
@@ -79,24 +79,20 @@ class StatePredictor:
         coupling = np.cross(self.w, Jw)
 
         # Get Basis from rotation matrix
-        e_x_b = R[:,0]
-        e_y_b = R[:,1]
         e_z_b = R[:,2]
 
         # f(R_b_w)
         f[0:3] = self.g_vec + T_rot/self.m*e_z_b
         f[3:] = self.J_inv @ (M_rot - coupling)
 
+        # Only use matched uncertainties (thrust and moments)
+        # Lateral forces (unmatched) are not compensated in underactuated system
         g[0:3,0] = 1.0/self.m * e_z_b
         g[3:6,1:4] = self.J_inv
-
-        g_perp[0:3,0] = 1.0 / self.m * e_x_b
-        g_perp[0:3,1] = 1.0 / self.m * e_y_b
 
         z_tilde = self.z_hat - z
 
         z_hat_dot = (f + g @ sigma_m
-                     + g_perp @ sigma_un
                      + self.As @ z_tilde)
 
         return z_hat_dot
@@ -114,9 +110,8 @@ class StatePredictor:
         return np.concatenate([self.v_world, self.w])
 
     def _unpack_sigma(self):
-        """Unpack uncertainty"""
+        """Unpack matched uncertainties only (thrust and moments)"""
         sigma_m = self.sigma[0:4]
-        sigma_un = self.sigma[4:]
-        return sigma_m, sigma_un
+        return sigma_m
 
 

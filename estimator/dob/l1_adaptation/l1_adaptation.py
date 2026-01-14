@@ -47,9 +47,10 @@ class L1Adaptation:
 
         self.sigma_hat = self.adaptation_law.update(t_prev, t_curr, z_tilde, state)
 
-        # Extract disturbances - only use thrust component for forces
-        # Lateral forces (fx, fy) cannot be compensated in underactuated system
-        # Return format must be [fx, fy, fz] to match geometric_control expectation
+        # Extract disturbances - only matched uncertainties (thrust and moments)
+        # Lateral forces cannot be compensated in underactuated multirotor
+        # sigma_hat[0]: thrust, sigma_hat[1:4]: moments, sigma_hat[4:6]: always zero
+        # Return format: [fx, fy, fz] in body frame to match geometric_control
         sigma_f_raw = np.array([0.0, 0.0, self.sigma_hat[0]])  # Only thrust (fz)
         sigma_tau_raw = np.array([self.sigma_hat[1], self.sigma_hat[2], self.sigma_hat[3]])
 
