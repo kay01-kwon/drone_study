@@ -28,13 +28,13 @@ def save_config(config):
 
 def run_simulation_and_extract_yaw_error():
     """
-    Run main_pd.py and extract yaw tracking error from output
+    Run main_pd_hgdo.py and extract yaw tracking error from output
 
     Returns: (mean_yaw_error, max_yaw_error, final_yaw_error) in degrees
     """
     try:
         result = subprocess.run(
-            ['python', 'main_pd.py'],
+            ['python', 'main_pd_hgdo.py'],
             capture_output=True,
             text=True,
             timeout=120

@@ -3,11 +3,6 @@ import numpy as np
 import os
 
 def load_yaml(config_path='config/pd_params.yaml'):
-    """
-
-    :param config_path:
-    :return:
-    """
 
     # Get the project root directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -103,3 +98,13 @@ def get_hgdo_params(config):
         'disturbance_torque_cutoff': config['lpf']['disturbance_torque_cutoff']
     }
     return hgdo_params
+
+def get_l1_adaptation_params(config):
+    l1_adaptation_params = {
+        'As_array': config['l1_adaptive']['As_array'],
+        'freq_cutoff_trans': config['l1_adaptive']['freq_cutoff_trans'],
+        'freq_cutoff_rot': config['l1_adaptive']['freq_cutoff_rot'],
+        'lin_vel_cutoff': config['lpf']['lin_vel_cutoff'],
+        'ang_vel_cutoff': config['lpf']['ang_vel_cutoff']
+    }
+    return l1_adaptation_params
