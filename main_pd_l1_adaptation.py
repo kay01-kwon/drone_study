@@ -105,6 +105,7 @@ def main():
         if i > 1:
             disturbance_estimate = l1_adaptive_obj.dob_estimate(t_sim[i-1], t_sim[i],
                                                         s_rotor[:6], s_feedback)
+            print(disturbance_estimate[3:])
             u = geometric_control.compute_u(s_feedback, ref, disturbance_estimate)
         else:
             u = geometric_control.compute_u(s_feedback, ref)

@@ -120,5 +120,3 @@ class StatePredictor:
         sigma_m = self.sigma[0:4]
         sigma_un = self.sigma[4:6]
         return sigma_m, sigma_un
-
-

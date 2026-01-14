@@ -47,23 +47,19 @@ class L1Adaptation:
 
         self.sigma_hat = self.adaptation_law.update(t_prev, t_curr, z_tilde, state)
 
-        # Extract disturbances (all in body frame, matching C++ implementation):
-        # sigma_hat[0]: thrust in body z
-        # sigma_hat[1:4]: moments in body frame
-        # sigma_hat[4:6]: lateral forces in body x, y
-
-        # Construct force in body frame directly (no transformation needed)
-        # Since all sigma components are estimated in body frame
-        f_ext_b = np.array([self.sigma_hat[4], self.sigma_hat[5], self.sigma_hat[0]])
-
-        # Moments are in body frame
-        tau_ext_b = np.array([self.sigma_hat[1], self.sigma_hat[2], self.sigma_hat[3]])
+        # Extract disturbances - only use thrust component for forces
+        # Lateral forces (fx, fy) cannot be compensated in underactuated system
+        # Return format must be [fx, fy, fz] to match geometric_control expectation
+        sigma_f_raw = np.array([0.0, 0.0, self.sigma_hat[0]])  # Only thrust (fz)
+        sigma_tau_raw = np.array([self.sigma_hat[1], self.sigma_hat[2], self.sigma_hat[3]])
 
         dt = t_curr - t_prev
 
-        # Process disturbances through low pass filter
-        self.sigma_f_lpf = self.trans_lpf_obj.do_filter(f_ext_b, dt)
-        self.sigma_tau_lpf = self.rot_lpf_obj.do_filter(tau_ext_b, dt)
+        # Process translational disturbance through low pass filter
+        self.sigma_f_lpf = self.trans_lpf_obj.do_filter(sigma_f_raw, dt)
+
+        # Process rotational disturbance through low pass filter
+        self.sigma_tau_lpf = self.rot_lpf_obj.do_filter(sigma_tau_raw, dt)
 
         return np.concatenate([self.sigma_f_lpf, self.sigma_tau_lpf])
 
