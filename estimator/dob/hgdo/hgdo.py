@@ -6,7 +6,7 @@ from utils.drone_converter import HexaConverter
 class HGDO:
     def __init__(self, DynParam, DroneParam, RotorParam ,DobParam):
 
-        # Get dynamic parameter
+        # Set dynamic parameter
         self.m = DynParam['m']
         J_array = DynParam['MoiArray']
         self.J = np.diag(J_array)
@@ -17,7 +17,7 @@ class HGDO:
         drone_param = DroneParam
         rotor_param = RotorParam
 
-        # Get HGDO parameter
+        # Set HGDO parameter
         self.eps_tau = DobParam['eps_tau']
         self.eps_f = DobParam['eps_f']
 
