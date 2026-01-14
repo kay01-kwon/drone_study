@@ -17,19 +17,19 @@ Now all functionality is **unified into a single `main.py`** with:
 
 ```bash
 # NMPC trajectory tracking without DOB (default)
-python3 main.py --control nmpc --dob none
+python3 main_dob_direct_compensation.py --control nmpc --dob none
 
 # PD control with HGDO (High Gain Disturbance Observer)
-python3 main.py --control pd --dob hgdo
+python3 main_dob_direct_compensation.py --control pd --dob hgdo
 
 # PD control with L1 Adaptation
-python3 main.py --control pd --dob l1
+python3 main_dob_direct_compensation.py --control pd --dob l1
 
 # PD control without DOB
-python3 main.py --control pd --dob none
+python3 main_dob_direct_compensation.py --control pd --dob none
 
 # NMPC with DOB (unusual but supported)
-python3 main.py --control nmpc --dob hgdo
+python3 main_dob_direct_compensation.py --control nmpc --dob hgdo
 ```
 
 ### Arguments
