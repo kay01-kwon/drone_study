@@ -25,13 +25,3 @@ nmpc_params:
             10.0, 10.0, 10.0, 10.0,   # qw, qx, qy, qz
             5.0, 5.0, 5.0 ]     # wx, wy, wz
   RArray: [ 0.1 ]     # u1...u6
-
-trajectory:
-  max_velocity: 0.3  # Maximum average velocity for trajectory generation [m/s]
-  max_yaw_rate: 0.2  # Maximum yaw rate for trajectory generation [rad/s]
-  time_scale: 5.0  # Time scale factor for smoother trajectories (>1.0)
-
-simulation:
-  w_rotor_idle: 2000.0  # Idle rotor speed [RPM]
-  tf: 100.0  # Final time [s]
-  dt: 0.010  # Time step [s]

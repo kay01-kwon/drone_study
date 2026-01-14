@@ -28,13 +28,3 @@ gain_params:
   KiOriArray: [0.01, 0.01, 0.01]  # Orientation integral gain
   IOriLimit: [1.0, 1.0, 1.0]  # Orientation integral limit
   AccelMax: [0.5, 0.5, 20.0]  # Maximum acceleration [m/s^2]
-
-trajectory:
-  max_velocity: 0.3  # Maximum average velocity for trajectory generation [m/s]
-  max_yaw_rate: 0.2  # Maximum yaw rate for trajectory generation [rad/s]
-  time_scale: 5.0  # Time scale factor for smoother trajectories (>1.0)
-
-simulation:
-  w_rotor_idle: 2000.0  # Idle rotor speed [RPM]
-  tf: 100.0  # Final time [s]
-  dt: 0.010  # Time step [s]

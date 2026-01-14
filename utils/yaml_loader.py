@@ -2,7 +2,7 @@ import yaml
 import numpy as np
 import os
 
-def load_yaml(config_path='config/pd_params.yaml'):
+def load_yaml(config_path):
 
     # Get the project root directory
     current_dir = os.path.dirname(os.path.abspath(__file__))

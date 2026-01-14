@@ -1,0 +1,4 @@
+trajectory:
+  max_velocity: 0.3  # Maximum average velocity for trajectory generation [m/s]
+  max_yaw_rate: 0.2  # Maximum yaw rate for trajectory generation [rad/s]
+  time_scale: 5.0  # Time scale factor for smoother trajectories (>1.0)
