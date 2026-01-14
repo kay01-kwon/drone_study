@@ -1,0 +1,9 @@
+dob:
+  eps_f: 0.01
+  eps_tau: 0.01
+
+lpf:
+  lin_vel_cutoff: 20.0
+  ang_vel_cutoff: 60.0
+  disturbance_force_cutoff: 60.0
+  disturbance_torque_cutoff: 60.0
