@@ -1,15 +1,14 @@
 import numpy as np
 from scipy.optimize import minimize
 import yaml
-import os
 
 from sim_model.S550_model import S550_Sim_Model
 from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
 from utils.yaml_loader import load_params
-from PID.geometric_control import GeometricControl
+from control.PID.geometric_control import GeometricControl
 from ref_generation.ref_generator import get_reference, unpack_ref, reset_trajectory
-from custom_ode import custom_rk4
+from utils.custom_ode import custom_rk4
 
 
 def run_simulation(gain_vector, dynamic_params, drone_params, rotor_params,

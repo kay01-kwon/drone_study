@@ -6,9 +6,9 @@ from utils.drone_converter import HexaConverter
 from utils.math_tool import quaternion_to_euler
 from utils import yaml_loader
 from utils.acados_cleanup import cleanup_acados_files
-from nmpc.ocp.S550_simple_ocp import S550SimpleOcp
+from control.nmpc.ocp.S550_simple_ocp import S550SimpleOcp
 from ref_generation.ref_generator import get_reference, unpack_ref
-from custom_ode import custom_rk4
+from utils.custom_ode import custom_rk4
 
 from matplotlib import pyplot as plt
 
