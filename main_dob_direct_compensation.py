@@ -14,9 +14,9 @@ DOB types:
 - l1: L1 Adaptive Control
 
 Examples:
-    python3 main.py --control nmpc --dob none
-    python3 main.py --control pd --dob hgdo
-    python3 main.py --control pd --dob l1
+    python3 main_dob_direct_compensation.py --control nmpc --dob none
+    python3 main_dob_direct_compensation.py --control pd --dob hgdo
+    python3 main_dob_direct_compensation.py --control pd --dob l1
 """
 
 import numpy as np
@@ -324,9 +324,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 main.py --control nmpc --dob none
-  python3 main.py --control pd --dob hgdo
-  python3 main.py --control pd --dob l1
+  python3 main_dob_direct_compensation.py --control nmpc --dob none
+  python3 main_dob_direct_compensation.py --control pd --dob hgdo
+  python3 main_dob_direct_compensation.py --control pd --dob l1
         """)
 
     parser.add_argument('--control', type=str, default='nmpc',
@@ -415,21 +415,30 @@ Examples:
         w_rotor_hist.append(w_rotor.copy())
         alpha_rotor_hist.append(alpha_rotor.copy())
 
+        if dob is not None and i > 1:
+            disturbance_estimate = dob.dob_estimate(t_sim[i-1], t_sim[i],
+                                                    s_rotor[:6], s_feedback)
+        else:
+            disturbance_estimate = np.zeros(6)
+
         # Compute control
         if control_type == 'nmpc':
             status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i])
+
+            if dob is not None:
+                u_mpc = hexa_converter.compute_u(w_cmd)
+                u_match = np.array([disturbance_estimate[2],    # fz
+                                   disturbance_estimate[3],     # Mx
+                                   disturbance_estimate[4],     # My
+                                   disturbance_estimate[5]])    # Mz
+                u_comp = u_mpc - u_match
+                w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t={t_sim[i]:.2f}s")
 
         elif control_type == 'pd':
-            # PD control with optional DOB
-            if dob is not None and i > 1:
-                disturbance_estimate = dob.dob_estimate(t_sim[i-1], t_sim[i],
-                                                        s_rotor[:6], s_feedback)
-                u = controller.compute_u(s_feedback, ref, disturbance_estimate)
-            else:
-                u = controller.compute_u(s_feedback, ref)
+            u = controller.compute_u(s_feedback, ref, disturbance_estimate)
 
             w_cmd = hexa_converter.compute_des_rotor_speed(u)
 
@@ -439,6 +448,9 @@ Examples:
         # Simulate rotor dynamics
         s_rotor = custom_rk4.do_step(rotor_sim_model.dynamics,
                                      s_rotor, w_cmd, t_ode)
+        # Hard clamp
+        alpha_max = params['true_rotor_params']['alpha_rotor_max']
+        s_rotor[6:] = np.clip(s_rotor[6:], -alpha_max, alpha_max)
 
         # Convert rotor speeds to control input
         u = hexa_converter.compute_u(s_rotor[0:6])
