@@ -125,7 +125,21 @@ class S550_Sim_Model:
             # Apply control moment and COM offset torque during ground contact
             J_w = self.J @ w
             M_com_offset = -np.cross(self.r_off, f*self.e3)
-            dwdt = self.J_inv @ (M + M_com_offset - np.cross(w,J_w)) - 50*w
+
+            # Ground friction torque (Coulomb-like for angular motion)
+            w_norm = np.linalg.norm(w)
+            mu_angular = 0.3  # Angular friction coefficient
+            arm_length_eff = 0.3  # Effective contact arm length [m]
+
+            if w_norm > 0.01:  # Moving: kinetic friction torque
+                M_friction = -mu_angular * N * arm_length_eff * w / w_norm
+            else:  # Near static: smooth transition to avoid singularity
+                M_friction = -mu_angular * N * arm_length_eff * w / 0.01
+
+            # Viscous angular damping
+            M_viscous = -50 * w
+
+            dwdt = self.J_inv @ (M + M_com_offset + M_friction + M_viscous - np.cross(w,J_w))
 
         else:
             # If not in contact with ground
