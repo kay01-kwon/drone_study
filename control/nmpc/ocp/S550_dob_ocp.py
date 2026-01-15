@@ -1,5 +1,5 @@
 from acados_template import AcadosOcp, AcadosOcpSolver
-from drone_control.nmpc.model.S550_simple import S550_model
+from drone_control.nmpc.model.S550_dob_model import S550_DobModel
 from utils.math_tool import quaternion_to_rotm
 from scipy.linalg import block_diag
 import numpy as np
@@ -51,7 +51,7 @@ class S550SimpleOcp:
         self.ocp = AcadosOcp()
 
         # Instantiate model object
-        model_obj = S550_model(DynParam, DroneParam)
+        model_obj = S550_DobModel(DynParam, DroneParam)
         acados_model = model_obj.export_acados_model()
 
         # Put acados model into ocp model
