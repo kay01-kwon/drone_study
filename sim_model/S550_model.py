@@ -50,17 +50,15 @@ class S550_Sim_Model:
         """
         Unpack state from vector
         p: position in the world frame
-        v: velocity in the body frame
-        q: body to world frame
+        v_world: velocity in the world frame
+        q: body to world frame (quaternion)
         w: angular velocity in the body frame
         """
         p = s[0:3]
         v_world = s[3:6]
         q = s[6:10]
-        R = quaternion_to_rotm(q)
-        v_body = R.T @ v_world
         w = s[10:13]
-        return p, v_body, q, w
+        return p, v_world, q, w
 
     def pack_control_input(self,f,M):
         """Pack control input into vector"""
@@ -82,7 +80,7 @@ class S550_Sim_Model:
         """
 
         # Unpack state and control input
-        p, v_body, q, w = self.unpack_state(s)
+        p, v_world, q, w = self.unpack_state(s)
         # Normalize quaternion
         q = q/np.linalg.norm(q,2)
         f, M = self.unpack_control_input(u)
@@ -90,7 +88,6 @@ class S550_Sim_Model:
         # Ground contact
         z = p[2]
         R = quaternion_to_rotm(q)
-        v_world = R @ v_body
         vx = v_world[0]
         vy = v_world[1]
         vz = v_world[2]
@@ -110,7 +107,11 @@ class S550_Sim_Model:
 
             w_quat = vec_to_quaternion_form(w)
             dqdt = 0.5*otimes(q, w_quat)
-            dwdt = -50*w
+
+            # Apply control moment and COM offset torque during ground contact
+            J_w = self.J @ w
+            M_com_offset = -np.cross(self.r_off, f*self.e3)
+            dwdt = self.J_inv @ (M + M_com_offset - np.cross(w,J_w)) - 50*w
 
         else:
             # If not in contact with ground
