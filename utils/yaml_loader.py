@@ -110,8 +110,8 @@ def get_l1_adaptation_params(config):
     return l1_adaptation_params
 
 def get_rls_parameters(config):
-    rls_params = {'P_m': config['rls']['m']['P_m'],
-                  'R_m': config['rls']['m']['R_m'],
-                  'P_com': config['rls']['com']['P_com'],
-                  'R_com': config['rls']['com']['R_com']}
+    rls_params = {'P_m': float(config['rls']['m']['P_m']),
+                  'R_m': float(config['rls']['m']['R_m']),
+                  'P_com': float(config['rls']['com']['P_com']),
+                  'R_com': float(config['rls']['com']['R_com'])}
     return rls_params
