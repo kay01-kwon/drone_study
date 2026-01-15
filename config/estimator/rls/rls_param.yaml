@@ -1,0 +1,7 @@
+rls:
+  m:
+    P_m: 0.25
+    R_m: 0.25
+  com:
+    P_com: 4e-4
+    R_com: 4e-4

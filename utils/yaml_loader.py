@@ -108,3 +108,10 @@ def get_l1_adaptation_params(config):
         'ang_vel_cutoff': config['lpf']['ang_vel_cutoff']
     }
     return l1_adaptation_params
+
+def get_rls_parameters(config):
+    rls_params = {'P_m': config['m']['P_m'],
+                  'R_m': config['m']['R_m'],
+                  'P_com': config['com']['P_com'],
+                  'R_com': config['com']['R_com']}
+    return rls_params
