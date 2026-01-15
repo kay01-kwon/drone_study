@@ -39,8 +39,10 @@ class S550_DobModel:
                             self.u4, self.u5, self.u6)
         self.u_dim = 6
 
+        #*********************************************
         # Pass parameter related to dm and com offset
         self.param = cs.MX.sym('p',3)
+        #*********************************************
 
         # The time derivative of state
         self.dpdt = cs.MX.sym('dpdt', 3)
@@ -65,7 +67,9 @@ class S550_DobModel:
         self.model.x = self.x
         self.model.xdot = self.xdot
         self.model.u = self.u
+        #********************************************
         self.model.p = self.param
+        #********************************************
         self.model.name = self.model_name
 
         return self.model
@@ -137,9 +141,11 @@ class S550_DobModel:
 
         f_col = self._compute_collective_thrust()
 
+        #******************************************************
         disturbance_com_offset = cs.vertcat(-ry*f_col/Jxx,
                                             rx*f_col/Jyy,
                                             0.0)
+        #******************************************************
 
         # inertial effect = J_inv @ (w x (J*w))
         inertial_effect = cs.vertcat((Jzz-Jyy)/Jxx*w_y*w_z,

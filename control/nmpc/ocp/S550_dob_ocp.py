@@ -65,9 +65,16 @@ class S550SimpleOcp:
         ])
 
         # Dim info
+        # The dimension of state and control input
         nx = acados_model.x.rows()
         nu = acados_model.u.rows()
         ny = nx + nu
+
+        # Parameter dimension
+        self.n_params = acados_model.p.rows()
+
+        # Default parameter values
+        self.p_default = np.zeros(self.n_params)
 
         # 1. Cost setup
 
@@ -127,12 +134,15 @@ class S550SimpleOcp:
         self.ref_nmpc = np.zeros((13,))
         self.ref_nmpc[6] = 1.0
 
-    def solve(self, state, ref, u_prev=None):
+        print(f"✓ NMPC created with {self.n_params} parameters")
+
+    def solve(self, state, ref, u_prev=None, DobCoeff = None):
         '''
         Solve OCP problem with warm start
         :param state: p (World), v (Body), q, w (Body)
         :param ref: p (World), v (World), yaw_des, dot_yaw_des
         :param u_prev: w_cmd1...w_cmd6 (Rotor speed)
+        :param DobCoeff: Delta mass, rx, ry
         :return: status, w_cmd(w_cmd1...w_cmd6)
         '''
 
@@ -148,16 +158,11 @@ class S550SimpleOcp:
         y_ref_N = self.ref_nmpc
 
         # Transform linear velocity from body to world
-        q = state[6:10]
-        R_B_W = quaternion_to_rotm(q)
-        v_world = R_B_W @ state[3:6]
-
-        state_new = state.copy()
-        state_new[3:6] = v_world
+        state_transformed = self.state_transform(state)
 
         # Set constraint at the first stage
-        self.ocp_solver.set(0, 'lbx', state_new)
-        self.ocp_solver.set(0, 'ubx', state_new)
+        self.ocp_solver.set(0, 'lbx', state_transformed)
+        self.ocp_solver.set(0, 'ubx', state_transformed)
 
         # Warm start: Use previous state trajectory as reference
         if self.previous_states is not None:
@@ -218,16 +223,11 @@ class S550SimpleOcp:
         dt = T / N
 
         # Transform linear velocity from body to world
-        q = state[6:10]
-        R_B_W = quaternion_to_rotm(q)
-        v_world = R_B_W @ state[3:6]
-
-        state_new = state.copy()
-        state_new[3:6] = v_world
+        state_transformed = self.state_transform(state)
 
         # Set constraint at the first stage
-        self.ocp_solver.set(0, 'lbx', state_new)
-        self.ocp_solver.set(0, 'ubx', state_new)
+        self.ocp_solver.set(0, 'lbx', state_transformed)
+        self.ocp_solver.set(0, 'ubx', state_transformed)
 
         # Set reference for each stage along the prediction horizon
         for stage in range(N):
@@ -270,6 +270,20 @@ class S550SimpleOcp:
         rotor_speed = np.sqrt(u/self.C_T)
 
         return status, rotor_speed
+
+    def state_transform(self, state):
+        """
+        Transform linear velocity from body to world frame
+        :param state: W_p, B_v, q_B_W, B_w
+        :return: W_p, W_v, q_B_W, B_w
+        """
+        q = state[6:10]
+        R_B_W = quaternion_to_rotm(q)
+        v_body = state[3:6]
+        v_world = R_B_W @ v_body
+        state_new = state.copy()
+        state_new[3:6] = v_world
+        return state_new
 
     def get_json_file_name(self):
         return self.solver_json
