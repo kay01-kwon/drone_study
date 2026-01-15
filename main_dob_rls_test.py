@@ -116,6 +116,10 @@ def load_parameters(control_type, dob_type):
         config_dob = yaml_loader.load_yaml('config/estimator/dob/l1_adaptive.yaml')
         params['dob_params'] = yaml_loader.get_l1_adaptation_params(config_dob)
 
+    # Load RLS parameters for dynamic parameter estimator
+    config_rls = yaml_loader.load_yaml('config/estimator/rls/rls_param.yaml')
+    params['rls_params'] = yaml_loader.get_rls_parameters(config_rls)
+
     return params
 
 
