@@ -318,10 +318,61 @@ def plot_disturbance_estimate_result(t_plot, f_est_hist, tau_est_hist):
     plt.tight_layout()
     plt.show()
 
-def print_statistics(control_type, dob_type, pos_hist, vel_hist, pos_des_hist,
-                    yaw_hist, yaw_des_hist):
+
+def plot_parameter_estimates(t_plot, m_est_hist, com_x_est_hist, com_y_est_hist,
+                             true_mass, true_com_offset):
     """
-    Print final simulation statistics
+    Plot dynamic parameter estimates (mass and COM offset)
+
+    Args:
+        t_plot: Time array
+        m_est_hist: Mass estimate history
+        com_x_est_hist: COM x-offset estimate history
+        com_y_est_hist: COM y-offset estimate history
+        true_mass: True mass value
+        true_com_offset: True COM offset [x, y, z]
+    """
+    fig, axs = plt.subplots(1, 3, figsize=(18, 5))
+
+    # Plot mass estimate
+    axs[0].plot(t_plot, m_est_hist, 'b-', label='Estimated mass', linewidth=2)
+    axs[0].axhline(y=true_mass, color='r', linestyle='--', label='True mass', linewidth=2)
+    axs[0].set_xlabel('Time [s]', fontsize=12)
+    axs[0].set_ylabel('Mass [kg]', fontsize=12)
+    axs[0].set_title('Mass Estimation', fontsize=14, fontweight='bold')
+    axs[0].legend(fontsize=10)
+    axs[0].grid(True, alpha=0.3)
+
+    # Plot COM x-offset estimate
+    axs[1].plot(t_plot, com_x_est_hist, 'b-', label='Estimated COM x', linewidth=2)
+    axs[1].axhline(y=true_com_offset[0], color='r', linestyle='--',
+                   label='True COM x', linewidth=2)
+    axs[1].set_xlabel('Time [s]', fontsize=12)
+    axs[1].set_ylabel('COM x-offset [m]', fontsize=12)
+    axs[1].set_title('COM X-Offset Estimation', fontsize=14, fontweight='bold')
+    axs[1].legend(fontsize=10)
+    axs[1].grid(True, alpha=0.3)
+
+    # Plot COM y-offset estimate
+    axs[2].plot(t_plot, com_y_est_hist, 'b-', label='Estimated COM y', linewidth=2)
+    axs[2].axhline(y=true_com_offset[1], color='r', linestyle='--',
+                   label='True COM y', linewidth=2)
+    axs[2].set_xlabel('Time [s]', fontsize=12)
+    axs[2].set_ylabel('COM y-offset [m]', fontsize=12)
+    axs[2].set_title('COM Y-Offset Estimation', fontsize=14, fontweight='bold')
+    axs[2].legend(fontsize=10)
+    axs[2].grid(True, alpha=0.3)
+
+    fig.suptitle('Dynamic Parameter Estimation (RLS)', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    plt.show()
+
+
+def print_statistics(control_type, dob_type, pos_hist, vel_hist, pos_des_hist,
+                    yaw_hist, yaw_des_hist, m_est_hist, com_x_est_hist, com_y_est_hist,
+                    true_mass, true_com_offset):
+    """
+    Print final simulation statistics including parameter estimates
     """
     print("\n========== Simulation Results ==========")
     print(f"Control Type: {control_type.upper()}")
@@ -343,6 +394,18 @@ def print_statistics(control_type, dob_type, pos_hist, vel_hist, pos_des_hist,
     print(f"Final yaw error: {abs(yaw_error_deg[-1]):.2f}°")
     print(f"Mean yaw error: {np.mean(np.abs(yaw_error_deg)):.2f}°")
     print(f"Max yaw error: {np.max(np.abs(yaw_error_deg)):.2f}°")
+    print()
+
+    # Parameter estimation results
+    print("========== Parameter Estimation ==========")
+    print(f"True mass: {true_mass:.4f} kg")
+    print(f"Final estimated mass: {m_est_hist[-1]:.4f} kg")
+    print(f"Mass estimation error: {abs(m_est_hist[-1] - true_mass):.4f} kg ({abs(m_est_hist[-1] - true_mass)/true_mass*100:.2f}%)")
+    print()
+    print(f"True COM offset: [{true_com_offset[0]:.4f}, {true_com_offset[1]:.4f}, {true_com_offset[2]:.4f}] m")
+    print(f"Final estimated COM: [{com_x_est_hist[-1]:.4f}, {com_y_est_hist[-1]:.4f}, N/A] m")
+    print(f"COM X estimation error: {abs(com_x_est_hist[-1] - true_com_offset[0]):.4f} m")
+    print(f"COM Y estimation error: {abs(com_y_est_hist[-1] - true_com_offset[1]):.4f} m")
 
     print("========================================\n")
 
@@ -423,6 +486,11 @@ Examples:
     f_est_hist = []
     tau_est_hist = []
 
+    # Parameter estimate storage
+    m_est_hist = []
+    com_x_est_hist = []
+    com_y_est_hist = []
+
     # Main simulation loop
     from ref_generation.ref_generator import get_reference, unpack_ref
 
@@ -461,6 +529,16 @@ Examples:
         tau_est = disturbance_estimate[3:6]
         f_est_hist.append(f_est.copy())
         tau_est_hist.append(tau_est.copy())
+
+        # Update dynamic parameter estimator (if DOB is active)
+        if dob is not None and i > 1:
+            dynamic_param_estimator.update(s_feedback, disturbance_estimate, s_rotor[:6])
+
+        # Store parameter estimates
+        m_est_hist.append(dynamic_param_estimator.get_mass_estimate())
+        com_est = dynamic_param_estimator.get_com_estimate()
+        com_x_est_hist.append(com_est[0])
+        com_y_est_hist.append(com_est[1])
 
         # Compute control
         if control_type == 'nmpc':
@@ -510,22 +588,32 @@ Examples:
     yaw_des_hist = np.array(yaw_des_hist)
     w_rotor_hist = np.array(w_rotor_hist)
     alpha_rotor_hist = np.array(alpha_rotor_hist)
+    f_est_hist = np.array(f_est_hist)
+    tau_est_hist = np.array(tau_est_hist)
+    m_est_hist = np.array(m_est_hist)
+    com_x_est_hist = np.array(com_x_est_hist)
+    com_y_est_hist = np.array(com_y_est_hist)
     t_plot = t_sim[:-1]
 
-    # Plot results
+    # Figure 1: Plot basic results (always shown)
     plot_results(control_type, dob_type, t_plot, pos_hist, vel_hist, pos_des_hist,
                 roll_hist, pitch_hist, yaw_hist, yaw_des_hist,
                 w_rotor_hist, alpha_rotor_hist)
 
-    # Plot disturbance estimate if dob mode
+    # Figure 2: Plot disturbance estimate (only if DOB is active)
     if dob is not None:
-        f_est_hist = np.array(f_est_hist)
-        tau_est_hist = np.array(tau_est_hist)
         plot_disturbance_estimate_result(t_plot, f_est_hist, tau_est_hist)
+
+    # Figure 3 (or 2 if no DOB): Plot parameter estimates (always shown)
+    plot_parameter_estimates(t_plot, m_est_hist, com_x_est_hist, com_y_est_hist,
+                             params['true_dynamic_params']['m'],
+                             params['true_dynamic_params']['com_offset'])
 
     # Print statistics
     print_statistics(control_type, dob_type, pos_hist, vel_hist, pos_des_hist,
-                    yaw_hist, yaw_des_hist)
+                    yaw_hist, yaw_des_hist, m_est_hist, com_x_est_hist, com_y_est_hist,
+                    params['true_dynamic_params']['m'],
+                    params['true_dynamic_params']['com_offset'])
 
     # Cleanup for NMPC
     if control_type == 'nmpc':
