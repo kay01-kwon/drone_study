@@ -114,4 +114,11 @@ def get_rls_parameters(config):
                   'R_m': float(config['rls']['m']['R_m']),
                   'P_com': float(config['rls']['com']['P_com']),
                   'R_com': float(config['rls']['com']['R_com'])}
+
+    # Add optional forgetting factors if present
+    if 'lambda_m' in config['rls']['m']:
+        rls_params['lambda_m'] = float(config['rls']['m']['lambda_m'])
+    if 'lambda_com' in config['rls']['com']:
+        rls_params['lambda_com'] = float(config['rls']['com']['lambda_com'])
+
     return rls_params

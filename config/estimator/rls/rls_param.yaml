@@ -1,7 +1,9 @@
 rls:
   m:
-    P_m: 0.25
-    R_m: 0.25
+    P_m: 1.0          # Initial covariance for mass (higher = faster initial adaptation)
+    R_m: 0.1          # Measurement noise for mass (lower = trust measurements more)
+    lambda_m: 0.98    # Forgetting factor for mass (0.95-0.99, lower = faster adaptation)
   com:
-    P_com: 4e-4
-    R_com: 4e-4
+    P_com: 1e-3       # Initial covariance for COM (higher = faster initial adaptation)
+    R_com: 1e-4       # Measurement noise for COM (lower = trust measurements more)
+    lambda_com: 0.97  # Forgetting factor for COM (0.95-0.99, lower = faster adaptation)

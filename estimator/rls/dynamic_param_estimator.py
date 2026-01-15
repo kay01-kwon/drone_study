@@ -12,16 +12,20 @@ class DynamicParamEstimator:
 
         # Set initial variance and signal noise variance for mass
         self.P_m = RlsParam['P_m']
-
         self.R_m = RlsParam['R_m']
+
+        # Forgetting factor for mass (optional, default = 1.0 for no forgetting)
+        self.lambda_m = RlsParam.get('lambda_m', 1.0)
 
         self.g_mag = 9.81
 
-        # Set initial variance and signal noise variancefor com offset
+        # Set initial variance and signal noise variance for com offset
         self.P_com_x = RlsParam['P_com']
         self.P_com_y = RlsParam['P_com']
-
         self.R_com = RlsParam['R_com']
+
+        # Forgetting factor for COM (optional, default = 1.0 for no forgetting)
+        self.lambda_com = RlsParam.get('lambda_com', 1.0)
 
         self.hexa_converter = HexaConverter(DroneParams=DroneParam,
                                             RotorParams=RotorParam)
@@ -35,15 +39,18 @@ class DynamicParamEstimator:
         f_ext_world = R_b_w @ f_ext
         m_signal = - (f_ext_world[2] - self.m_nom * self.g_mag)/self.g_mag
 
+        # RLS with forgetting factor for mass
         K_m = self.P_m / (self.P_m + self.R_m)
         self.m_est = self.m_est + K_m*(m_signal - self.m_est)
-        self.P_m = (1 - K_m) * self.P_m
+        self.P_m = (1 - K_m) * self.P_m / self.lambda_m  # Forgetting factor applied
 
         # Update r_com_offset
         u = self.hexa_converter.compute_u(rotor_speed)
         f_col = u[0]
         r_signal = np.array([tau_ext[1]/f_col,
                              -tau_ext[0]/f_col])
+
+        # RLS with forgetting factor for COM offset
         K_com_x = self.P_com_x / (self.P_com_x + self.R_com)
         K_com_y = self.P_com_y / (self.P_com_y + self.R_com)
 
@@ -51,8 +58,10 @@ class DynamicParamEstimator:
                                 + K_com_x*(r_signal[0] - self.r_offset_est[0]))
         self.r_offset_est[1] = (self.r_offset_est[1]
                                 + K_com_y*(r_signal[1] - self.r_offset_est[1]))
-        self.P_com_x = (1 - K_com_x) * self.P_com_x
-        self.P_com_y = (1 - K_com_y) * self.P_com_y
+
+        # Forgetting factor applied
+        self.P_com_x = (1 - K_com_x) * self.P_com_x / self.lambda_com
+        self.P_com_y = (1 - K_com_y) * self.P_com_y / self.lambda_com
 
     def get_mass_estimate(self):
         return self.m_est
