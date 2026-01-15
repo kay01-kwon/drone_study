@@ -96,9 +96,23 @@ class S550_Sim_Model:
 
             K_ground = 10e3
             D_ground = 100
+            mu_friction = 0.5  # Friction coefficient (static/kinetic)
 
-            f_normal = np.array([0.0, 0.0, -K_ground*z - D_ground*vz])
-            f_friction = -D_ground*np.array([vx, vy, 0.0])
+            # Normal force (only upward)
+            N = max(0.0, -K_ground*z - D_ground*vz)
+            f_normal = np.array([0.0, 0.0, N])
+
+            # Friction force (Coulomb + viscous)
+            v_horizontal = np.array([vx, vy, 0.0])
+            v_h_norm = np.linalg.norm(v_horizontal)
+
+            if v_h_norm > 1e-4:  # Moving: Coulomb friction
+                f_coulomb = -mu_friction * N * v_horizontal / v_h_norm
+            else:  # Near static: smooth transition
+                f_coulomb = -mu_friction * N * v_horizontal / 1e-4
+
+            f_viscous = -D_ground * v_horizontal
+            f_friction = f_coulomb + f_viscous
 
             f_total = (f_friction + f_normal
                        + R@(f*self.e3) + self.m*self.g_vec)
