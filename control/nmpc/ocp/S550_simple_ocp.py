@@ -1,5 +1,5 @@
 from acados_template import AcadosOcp, AcadosOcpSolver
-from drone_control.nmpc.model.S550_simple import S550_model
+from control.nmpc.model.S550_simple import S550_model
 from utils.math_tool import quaternion_to_rotm
 from scipy.linalg import block_diag
 import numpy as np

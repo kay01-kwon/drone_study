@@ -1,7 +1,7 @@
 from acados_template import AcadosModel
 import casadi as cs
 import numpy as np
-from drone_control.nmpc.cs_utils import cs_math_tool
+from control.nmpc.cs_utils import cs_math_tool
 
 class S550_DobModel:
     def __init__(self, DynParam, DroneParam):
