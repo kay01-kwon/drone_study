@@ -70,11 +70,13 @@ class S550SimpleOcp:
         nu = acados_model.u.rows()
         ny = nx + nu
 
+        #***************************************************
         # Parameter dimension
         self.n_params = acados_model.p.rows()
 
         # Default parameter values
         self.p_default = np.zeros(self.n_params)
+        #***************************************************
 
         # 1. Cost setup
 
@@ -149,6 +151,13 @@ class S550SimpleOcp:
         if u_prev is None:
             u_prev = np.zeros((6,))
 
+        #***********************************************
+        if DobCoeff is None:
+            params = self.p_default
+        else:
+            params = DobCoeff
+        #***********************************************
+
         self.ref_nmpc[0:6] = ref[0:6]
         self.ref_nmpc[6] = np.cos(ref[6]/2.0)
         self.ref_nmpc[9] = np.sin(ref[6]/2.0)
@@ -168,6 +177,12 @@ class S550SimpleOcp:
         if self.previous_states is not None:
             # Shift previous trajectory forward by one step
             for stage in range(self.ocp.solver_options.N_horizon):
+
+                # ***********************************************
+                # Set parameter
+                self.ocp_solver.set(stage, 'p', params)
+                # ***********************************************
+
                 if stage < self.ocp.solver_options.N_horizon - 1:
                     # Use next state from previous trajectory
                     prev_state = self.previous_states[stage + 1]
@@ -179,11 +194,19 @@ class S550SimpleOcp:
                     self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
 
             # Set terminal reference
+            #*****************************************************************
+            self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'p', params)
+            #*****************************************************************
             self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'y_ref', self.ref_nmpc)
         else:
             # First solve: use constant reference
             for stage in range(self.ocp.solver_options.N_horizon):
                 self.ocp_solver.set(stage, 'y_ref', y_ref)
+
+                # ***********************************************
+                # Set parameter
+                self.ocp_solver.set(stage, 'p', params)
+                # ***********************************************
 
             # Set y ref at the terminal stage
             self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'y_ref', y_ref_N)
@@ -204,7 +227,7 @@ class S550SimpleOcp:
 
         return status, rotor_speed
 
-    def solve_for_trajectory(self, state, t_curr, u_prev=None):
+    def solve_for_trajectory(self, state, t_curr, u_prev=None, DobCoeff = None):
         '''
         Solve OCP problem with trajectory tracking along prediction horizon
         :param state: p (World), v (Body), q, w (Body)
@@ -216,6 +239,13 @@ class S550SimpleOcp:
 
         if u_prev is None:
             u_prev = np.zeros((6,))
+
+        #***********************************************
+        if DobCoeff is None:
+            params = self.p_default
+        else:
+            params = DobCoeff
+        #***********************************************
 
         # Get time step for prediction horizon
         N = self.ocp.solver_options.N_horizon
@@ -231,6 +261,12 @@ class S550SimpleOcp:
 
         # Set reference for each stage along the prediction horizon
         for stage in range(N):
+
+            # ***********************************************
+            # Set parameter
+            self.ocp_solver.set(stage, 'p', params)
+            # ***********************************************
+
             # Get reference at future time
             t_ref = t_curr + stage * dt
             ref = get_reference(t_ref)
@@ -254,6 +290,10 @@ class S550SimpleOcp:
         ref_nmpc_N[12] = ref_N[7]
 
         self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
+
+        #*************************************
+        self.ocp_solver.set(N, 'p', params)
+        #*************************************
 
         # Solve OCP
         status = self.ocp_solver.solve()
