@@ -118,7 +118,7 @@ class S550_Sim_Model:
             dvdt = 1/self.m * R @ (f*self.e3) + self.g_vec
 
             w_quat = vec_to_quaternion_form(w)
-            dqdt = 0.5*otimes(w_quat, q)
+            dqdt = 0.5*otimes(q, w_quat)
             J_w = self.J @ w
             dwdt = self.J_inv @ (M - np.cross(w,J_w)
                              - np.cross(self.r_off, f*self.e3))
