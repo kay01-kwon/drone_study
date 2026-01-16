@@ -139,26 +139,17 @@ class S550_Sim_Model:
                 N = max(0.0, N)  # Only push, no pull
                 f_normal = np.array([0.0, 0.0, N])
 
-                # Friction force at this contact point
+                # Friction force - simplified kinetic friction
                 v_horizontal = np.array([vx_c, vy_c, 0.0])
                 v_h_norm = np.linalg.norm(v_horizontal)
 
-                # Applied force (for static friction check)
-                f_thrust = R @ (f * self.e3)
-                f_applied = f_thrust + self.m * self.g_vec + f_normal
-                f_applied_h = np.array([f_applied[0], f_applied[1], 0.0])
-                f_applied_h_norm = np.linalg.norm(f_applied_h)
+                # Coulomb + viscous friction
+                if v_h_norm > epsilon:
+                    f_friction = -mu_friction * N * v_horizontal / v_h_norm
+                else:
+                    f_friction = np.zeros(3)
 
-                if v_h_norm < v_threshold:  # Potentially static
-                    f_static_max = mu_friction * N
-                    if f_applied_h_norm <= f_static_max:
-                        f_friction = -f_applied_h
-                    else:
-                        f_friction = -mu_friction * N * f_applied_h / (f_applied_h_norm + epsilon)
-                else:  # Moving: kinetic friction
-                    f_friction = -mu_friction * N * v_horizontal / (v_h_norm + epsilon)
-
-                # Add viscous damping
+                # Strong viscous damping
                 f_friction += -D_ground * v_horizontal
 
                 # Total force from this contact point
@@ -198,23 +189,10 @@ class S550_Sim_Model:
                 M_com_offset = -np.cross(self.r_off, f*self.e3)
                 M_applied = M + M_com_offset + M_contact_total - np.cross(w, J_w)
 
-                # Angular friction torque
-                w_norm = np.linalg.norm(w)
-                w_threshold = 0.05
-                mu_angular = 0.8
-                M_applied_norm = np.linalg.norm(M_applied)
+                # Simple angular damping for ground contact
+                M_viscous = -100 * w
 
-                if w_norm < w_threshold:
-                    M_static_max = mu_angular * np.linalg.norm(f_contact_total) * 0.15
-                    if M_applied_norm <= M_static_max:
-                        M_friction = -M_applied
-                    else:
-                        M_friction = -M_static_max * M_applied / (M_applied_norm + epsilon)
-                else:
-                    M_friction = -mu_angular * np.linalg.norm(f_contact_total) * 0.15 * w / (w_norm + epsilon)
-
-                M_viscous = -200 * w
-                dwdt = self.J_inv @ (M_applied + M_friction + M_viscous)
+                dwdt = self.J_inv @ (M_applied + M_viscous)
 
         else:
             # If not in contact with ground
