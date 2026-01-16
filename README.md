@@ -2,13 +2,7 @@
 
 ## Overview
 
-Previously, there were 4 separate main files with duplicate code:
-- `main_mpc.py` - NMPC trajectory tracking
-- `main_mpc_regulation.py` - NMPC regulation control
-- `main_pd_hgdo.py` - PD control with HGDO
-- `main_pd_l1_adaptation.py` - PD control with L1 Adaptation
-
-Now all functionality is **unified into a single `main.py`** with:
+Now all functionality is **unified into a single `main_control.py`** with:
 - **Separate control and DOB selection** via command-line arguments
 - **Modular config file system** for easy parameter management
 - **Flexible combinations** (e.g., NMPC + no DOB, PD + HGDO, PD + L1, etc.)
@@ -17,26 +11,27 @@ Now all functionality is **unified into a single `main.py`** with:
 
 ```bash
 # NMPC trajectory tracking without DOB (default)
-python3 main_dob_direct_compensation.py --control nmpc --dob none
+python3 main_control.py --control nmpc_comp --dob none
 
 # PD control with HGDO (High Gain Disturbance Observer)
-python3 main_dob_direct_compensation.py --control pd --dob hgdo
+python3 main_control.py --control pd --dob hgdo
 
 # PD control with L1 Adaptation
-python3 main_dob_direct_compensation.py --control pd --dob l1
+python3 main_control.py --control pd --dob l1
 
 # PD control without DOB
-python3 main_dob_direct_compensation.py --control pd --dob none
+python3 main_control.py --control pd --dob none
 
-# NMPC with DOB (unusual but supported)
-python3 main_dob_direct_compensation.py --control nmpc --dob hgdo
+# NMPC_param with DOB (unusual but supported)
+python3 main_control.py --control nmpc_param --dob hgdo
 ```
 
 ### Arguments
 
 - `--control {nmpc, pd}`: Control method
-  - `nmpc`: Nonlinear Model Predictive Control
-  - `pd`: PD/Geometric Control
+  - `nmpc_comp`: Nonlinear Model Predictive Control (Direct compensation with DOB)
+  - `nmpc_param`: Nonlinear Model Predictive Control (Dynamic paramter feedback)
+  - `pd`: Geometric Control
 
 - `--dob {none, hgdo, l1}`: Disturbance observer type
   - `none`: No disturbance observer
@@ -107,7 +102,7 @@ Config files are now **modularly organized** in subdirectories:
 **CRITICAL DISTINCTION:**
 
 ### TRUE Parameters (Simulator)
-- **Used by:** `S550_Sim_Model`, `RotorModel`, `HexaConverter`
+- **Used by:** `S550_Sim_Model`, `S550_Param_Model`, `RotorModel`, `HexaConverter`
 - **Purpose:** Represent the **actual physical system** being simulated
 - **Source:** `config/simulator/simulator.yaml`
 - **Can differ from nominal** to test robustness to model uncertainty
@@ -167,16 +162,3 @@ The split config file structure provides:
 4. **Scalability**
    - Simple to add new control methods (add new file in `config/control/`)
    - Easy to add new DOB types (add new file in `config/estimator/dob/`)
-
-## Migration from Old Structure
-
-The old main files have been **deleted** as the unified version supersedes them:
-- ~~`main_mpc.py`~~
-- ~~`main_mpc_regulation.py`~~
-- ~~`main_pd_hgdo.py`~~
-- ~~`main_pd_l1_adaptation.py`~~
-
-To reproduce old behavior:
-- `main_mpc.py` → `python3 main.py --control nmpc --dob none`
-- `main_pd_hgdo.py` → `python3 main.py --control pd --dob hgdo`
-- `main_pd_l1_adaptation.py` → `python3 main.py --control pd --dob l1`
