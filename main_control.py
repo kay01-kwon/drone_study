@@ -96,7 +96,8 @@ def main():
                                                     DroneParam=params['nominal_drone_params'],
                                                     RotorParam=params['nominal_rotor_params'],
                                                     RlsParam=params['rls_params'])
-    param_est = np.zeros(2)
+    m_nom = params['nominal_dynamic_params']['m']
+    param_est = np.array([m_nom, 0.0, 0.0])
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']

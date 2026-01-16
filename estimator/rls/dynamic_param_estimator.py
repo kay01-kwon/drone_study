@@ -42,10 +42,11 @@ class DynamicParamEstimator:
         f_ext_world = R_b_w @ f_ext
         m_signal = - (f_ext_world[2] - self.m_nom * self.g_mag)/self.g_mag
 
-        # RLS with forgetting factor for mass
-        K_m = self.P_m / (self.P_m + self.R_m)
-        self.m_est = self.m_est + K_m*(m_signal - self.m_est)
-        self.P_m = (1 - K_m) * self.P_m / self.lambda_m  # Forgetting factor applied
+        if z >= 0.1:
+            # RLS with forgetting factor for mass
+            K_m = self.P_m / (self.P_m + self.R_m)
+            self.m_est = self.m_est + K_m*(m_signal - self.m_est)
+            self.P_m = (1 - K_m) * self.P_m / self.lambda_m  # Forgetting factor applied
 
         # Update r_com_offset
         u = self.hexa_converter.compute_u(rotor_speed)
