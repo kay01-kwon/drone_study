@@ -546,7 +546,7 @@ Examples:
 
         # Compute control
         if control_type == 'nmpc':
-            status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i], s_rotor[:6], param_est)
+            status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i], u_prev=None, DobCoeff=param_est)
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t={t_sim[i]:.2f}s")
