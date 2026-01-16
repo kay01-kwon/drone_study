@@ -124,6 +124,9 @@ class S550DobOcp:
         self.ocp.solver_options.tf = t_horizon
         self.ocp.solver_options.N_horizon = n_nodes
 
+        # Set initial parameter values (required for models with parameters)
+        self.ocp.parameter_values = self.p_default
+
         # self.ocp_solver = AcadosOcpSolver(self.ocp)
         # generate json file and generate cython
         self.solver_json = 'acados_ocp_' + self.ocp.model.name + '.json'
