@@ -42,10 +42,11 @@ class S550_Sim_Model:
 
         self.e3 = np.array([0, 0, 1.0])
 
-        # Landing gear geometry (body frame)
-        self.landing_gear_width = 0.277  # Distance between landing gear legs [m]
-        self.landing_gear_height = 0.256  # Landing gear leg length [m]
+        # Landing gear geometry (body frame) - from CAD drawing
+        self.landing_gear_width = 0.28845  # Distance between landing gear legs [m]
+        self.landing_gear_height = 0.28837  # Height from ground to COM [m]
         # Contact points in body frame (2 legs, left and right)
+        # COM is at origin, contact points are below at -height
         self.contact_points_body = np.array([
             [0.0, self.landing_gear_width/2, -self.landing_gear_height],   # Right leg
             [0.0, -self.landing_gear_width/2, -self.landing_gear_height]   # Left leg
