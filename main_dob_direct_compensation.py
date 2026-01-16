@@ -84,9 +84,10 @@ def load_parameters(control_type, dob_type):
     params['true_rotor_params'] = yaml_loader.get_rotor_params(config_sim)
     params['sim_params'] = yaml_loader.get_sim_params(config_sim)
 
-    # Load trajectory parameters (common for trajectory tracking)
+    # Load trajectory and regulation parameters
     config_traj = yaml_loader.load_yaml('config/trajectory/trajectory.yaml')
     params['trajectory_params'] = yaml_loader.get_trajectory_params(config_traj)
+    params['regulation_params'] = yaml_loader.get_regulation_params(config_traj)
 
     # Load NOMINAL parameters from control config (used for controller AND DOB)
     if control_type == 'nmpc':
@@ -360,14 +361,18 @@ Examples:
     parser.add_argument('--dob', type=str, default='none',
                        choices=['none', 'hgdo', 'l1'],
                        help='Disturbance observer: none, hgdo (High Gain DOB), or l1 (L1 Adaptive)')
+    parser.add_argument('--mode', type=str, default='tracking',
+                       choices=['tracking', 'regulation'],
+                       help='Control mode: tracking (waypoint following) or regulation (fixed hover)')
 
     args = parser.parse_args()
 
     control_type = args.control
     dob_type = args.dob
+    control_mode = args.mode
 
     print(f"\n{'='*60}")
-    print(f"Control: {control_type.upper()} | DOB: {dob_type.upper()}")
+    print(f"Control: {control_type.upper()} | DOB: {dob_type.upper()} | Mode: {control_mode.upper()}")
     print(f"{'='*60}\n")
 
     # Validate combination
@@ -419,6 +424,13 @@ Examples:
     # Main simulation loop
     from ref_generation.ref_generator import get_reference, unpack_ref
 
+    # Print control mode information
+    if control_mode == 'regulation':
+        print("\n========== Regulation Control ==========")
+        print(f"Setpoint position: {params['regulation_params']['setpoint_position']}")
+        print(f"Setpoint yaw: {params['regulation_params']['setpoint_yaw']:.2f} rad")
+        print("==========================================\n")
+
     for i in range(N-1):
         # Unpack state
         p, v, q, w = drone_sim_model.unpack_state(s_drone)
@@ -426,12 +438,18 @@ Examples:
         roll, pitch, yaw = quaternion_to_euler(q)
         s_feedback = np.concatenate([p, v, q, w])
 
-        # Get reference trajectory
-        if i == 0:
-            ref = get_reference(t_sim[i], params['trajectory_params'])
-        else:
-            ref = get_reference(t_sim[i])
-        p_des, v_des, yaw_des, yaw_des_dot = unpack_ref(ref)
+        # Get reference (tracking or regulation)
+        if control_mode == 'tracking':
+            if i == 0:
+                ref = get_reference(t_sim[i], params['trajectory_params'])
+            else:
+                ref = get_reference(t_sim[i])
+            p_des, v_des, yaw_des, yaw_des_dot = unpack_ref(ref)
+        else:  # regulation
+            p_des = params['regulation_params']['setpoint_position']
+            v_des = np.zeros(3)
+            yaw_des = params['regulation_params']['setpoint_yaw']
+            yaw_des_dot = 0.0
 
         # Store history
         pos_hist.append(p.copy())
