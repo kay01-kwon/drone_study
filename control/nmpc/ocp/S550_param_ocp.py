@@ -1,10 +1,10 @@
 from acados_template import AcadosOcp, AcadosOcpSolver
-from control.nmpc.model.S550_dob_model import S550_DobModel
+from control.nmpc.model.S550_param_model import S550ParamModel
 from utils.math_tool import quaternion_to_rotm
 from scipy.linalg import block_diag
 import numpy as np
 
-class S550DobOcp:
+class S550ParamOcp:
     def __init__(self, DynParam = None, DroneParam = None, MpcParam = None):
         '''
         Constructor
@@ -51,7 +51,7 @@ class S550DobOcp:
         self.ocp = AcadosOcp()
 
         # Instantiate model object
-        model_obj = S550_DobModel(DynParam, DroneParam)
+        model_obj = S550ParamModel(DynParam, DroneParam)
         acados_model = model_obj.export_acados_model()
 
         # Put acados model into ocp model
@@ -230,11 +230,12 @@ class S550DobOcp:
 
         return status, rotor_speed
 
-    def solve_for_trajectory(self, state, t_curr, u_prev=None, DobCoeff = None):
+    def solve_for_trajectory(self, state, t_curr, param_est = None, u_prev=None):
         '''
         Solve OCP problem with trajectory tracking along prediction horizon
         :param state: p (World), v (Body), q, w (Body)
         :param t_curr: Current time
+        :param param_est: m_est, com_offset_x, com_offset_y in turn
         :param u_prev: u1...u6 (Rotor thrust)
         :return: status, w_cmd(w_cmd1...w_cmd6)
         '''
@@ -244,10 +245,10 @@ class S550DobOcp:
             u_prev = np.zeros((6,))
 
         #***********************************************
-        if DobCoeff is None:
+        if param_est is None:
             params = self.p_default
         else:
-            params = DobCoeff
+            params = param_est
         #***********************************************
 
         # Get time step for prediction horizon

@@ -3,7 +3,7 @@ import casadi as cs
 import numpy as np
 from control.nmpc.cs_utils import cs_math_tool
 
-class S550_DobModel:
+class S550ParamModel:
     def __init__(self, DynParam, DroneParam):
         '''
         DroneParam: m, arm_length, motor_const, moment_const
