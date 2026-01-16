@@ -97,22 +97,36 @@ class S550_Sim_Model:
             K_ground = 10e3
             D_ground = 100
             mu_friction = 0.5  # Friction coefficient (static/kinetic)
+            v_threshold = 1e-3  # Velocity threshold for static friction [m/s]
 
             # Normal force (only upward)
             N = max(0.0, -K_ground*z - D_ground*vz)
             f_normal = np.array([0.0, 0.0, N])
 
-            # Friction force (Coulomb + viscous)
+            # Calculate applied force (excluding friction)
+            f_thrust = R @ (f * self.e3)
+            f_applied = f_thrust + self.m * self.g_vec + f_normal
+            f_applied_h = np.array([f_applied[0], f_applied[1], 0.0])
+
+            # Friction force (Static vs Kinetic Coulomb friction)
             v_horizontal = np.array([vx, vy, 0.0])
             v_h_norm = np.linalg.norm(v_horizontal)
+            f_applied_h_norm = np.linalg.norm(f_applied_h)
 
-            if v_h_norm > 1e-4:  # Moving: Coulomb friction
-                f_coulomb = -mu_friction * N * v_horizontal / v_h_norm
-            else:  # Near static: smooth transition
-                f_coulomb = -mu_friction * N * v_horizontal / 1e-4
+            if v_h_norm < v_threshold:  # Potentially static
+                # Maximum static friction
+                f_static_max = mu_friction * N
+                if f_applied_h_norm <= f_static_max:
+                    # Static friction: cancel applied force (net force = 0)
+                    f_friction = -f_applied_h
+                else:
+                    # Break static friction: kinetic friction
+                    f_friction = -mu_friction * N * f_applied_h / f_applied_h_norm
+            else:  # Moving: kinetic friction
+                f_friction = -mu_friction * N * v_horizontal / v_h_norm
 
-            f_viscous = -D_ground * v_horizontal
-            f_friction = f_coulomb + f_viscous
+            # Add viscous damping
+            f_friction += -D_ground * v_horizontal
 
             f_total = (f_friction + f_normal
                        + R@(f*self.e3) + self.m*self.g_vec)
@@ -126,20 +140,32 @@ class S550_Sim_Model:
             J_w = self.J @ w
             M_com_offset = -np.cross(self.r_off, f*self.e3)
 
-            # Ground friction torque (Coulomb-like for angular motion)
+            # Calculate applied moment (excluding friction)
+            M_applied = M + M_com_offset - np.cross(w, J_w)
+
+            # Ground friction torque (Static vs Kinetic)
             w_norm = np.linalg.norm(w)
+            w_threshold = 0.01  # Angular velocity threshold [rad/s]
             mu_angular = 0.3  # Angular friction coefficient
             arm_length_eff = 0.3  # Effective contact arm length [m]
+            M_applied_norm = np.linalg.norm(M_applied)
 
-            if w_norm > 0.01:  # Moving: kinetic friction torque
+            if w_norm < w_threshold:  # Potentially static
+                # Maximum static friction torque
+                M_static_max = mu_angular * N * arm_length_eff
+                if M_applied_norm <= M_static_max:
+                    # Static: cancel applied moment (net torque = 0 in inertial frame)
+                    M_friction = -M_applied
+                else:
+                    # Break static friction: kinetic friction torque
+                    M_friction = -M_static_max * M_applied / M_applied_norm
+            else:  # Rotating: kinetic friction torque
                 M_friction = -mu_angular * N * arm_length_eff * w / w_norm
-            else:  # Near static: smooth transition to avoid singularity
-                M_friction = -mu_angular * N * arm_length_eff * w / 0.01
 
             # Viscous angular damping
             M_viscous = -50 * w
 
-            dwdt = self.J_inv @ (M + M_com_offset + M_friction + M_viscous - np.cross(w,J_w))
+            dwdt = self.J_inv @ (M_applied + M_friction + M_viscous)
 
         else:
             # If not in contact with ground
