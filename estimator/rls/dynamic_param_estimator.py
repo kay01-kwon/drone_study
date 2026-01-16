@@ -76,7 +76,7 @@ class DynamicParamEstimator:
         return np.concatenate([self.P_com_x, self.P_com_y])
 
     def get_parameter_estimate(self):
-        return np.concatenate([self.m_nom, self.r_offset_est])
+        return np.concatenate([self.m_est, self.r_offset_est])
 
     def get_parameter_variance(self):
         return np.concatenate([self.P_m, self.P_com_x, self.P_com_y])
