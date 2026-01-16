@@ -96,113 +96,42 @@ class S550_Sim_Model:
         q = q/np.linalg.norm(q,2)
         f, M = self.unpack_control_input(u)
 
-        # Ground contact
-        z = p[2]
+        # Simple ground contact (like Gazebo)
         R = quaternion_to_rotm(q)
-        vx = v_world[0]
-        vy = v_world[1]
-        vz = v_world[2]
+        z = p[2]
 
-        # Check ground contact using landing gear geometry
-        contact_detected = False
-        f_contact_total = np.zeros(3)
-        M_contact_total = np.zeros(3)
+        # Ground contact force (simple spring-damper)
+        if z < 0.0:
+            K_ground = 5000.0  # N/m
+            D_ground = 200.0   # N*s/m
+            mu = 0.8           # Friction coefficient
 
-        # Ground contact parameters
-        K_ground = 10e3  # Ground stiffness [N/m]
-        D_ground = 100   # Ground damping [N*s/m]
-        mu_friction = 0.5  # Friction coefficient
-        v_threshold = 1e-3  # Velocity threshold for static friction [m/s]
-        epsilon = 1e-8
+            # Normal force
+            f_normal = np.array([0.0, 0.0, -K_ground * z - D_ground * v_world[2]])
+            f_normal[2] = max(0.0, f_normal[2])  # Only upward
 
-        # Check each landing gear contact point
-        for contact_point_body in self.contact_points_body:
-            # Transform contact point to world frame
-            r_contact_world = p + R @ contact_point_body
-            z_contact = r_contact_world[2]
-
-            if z_contact <= 0.0:  # Contact detected
-                contact_detected = True
-
-                # Penetration depth
-                penetration = -z_contact
-
-                # Contact point velocity (world frame)
-                r_contact_body = contact_point_body  # Vector from COM to contact in body
-                v_contact_world = v_world + R @ np.cross(w, r_contact_body)
-                vx_c = v_contact_world[0]
-                vy_c = v_contact_world[1]
-                vz_c = v_contact_world[2]
-
-                # Normal force at this contact point
-                N = K_ground * penetration - D_ground * vz_c
-                N = max(0.0, N)  # Only push, no pull
-                f_normal = np.array([0.0, 0.0, N])
-
-                # Friction force - simplified kinetic friction
-                v_horizontal = np.array([vx_c, vy_c, 0.0])
-                v_h_norm = np.linalg.norm(v_horizontal)
-
-                # Coulomb + viscous friction
-                if v_h_norm > epsilon:
-                    f_friction = -mu_friction * N * v_horizontal / v_h_norm
-                else:
-                    f_friction = np.zeros(3)
-
-                # Strong viscous damping
-                f_friction += -D_ground * v_horizontal
-
-                # Total force from this contact point
-                f_contact = f_normal + f_friction
-                f_contact_total += f_contact
-
-                # Moment from this contact point (r × F)
-                r_contact_body_to_com = contact_point_body
-                M_contact = np.cross(R @ r_contact_body_to_com, f_contact)
-                M_contact_total += M_contact
-
-        if contact_detected:
-            # Check if tipped over (roll or pitch > 80 degrees)
-            roll, pitch, yaw = quaternion_to_euler(q)
-            tipped_over = (abs(roll) > self.tip_over_angle) or (abs(pitch) > self.tip_over_angle)
-
-            if tipped_over:
-                # Stuck condition: very strong damping
-                dpdt = v_world
-                dvdt = 1.0/self.m * (R@(f*self.e3) + self.m*self.g_vec + f_contact_total)
-
-                w_quat = vec_to_quaternion_form(w)
-                dqdt = 0.5*otimes(q, w_quat)
-
-                # Extremely strong damping when tipped over
-                dwdt = -500 * w
+            # Friction force (proportional to normal force and velocity)
+            v_horizontal = np.array([v_world[0], v_world[1], 0.0])
+            v_h_norm = np.linalg.norm(v_horizontal)
+            if v_h_norm > 1e-6:
+                f_friction = -mu * f_normal[2] * v_horizontal / v_h_norm
             else:
-                # Normal ground contact
-                dpdt = v_world
-                dvdt = 1.0/self.m * (R@(f*self.e3) + self.m*self.g_vec + f_contact_total)
+                f_friction = np.zeros(3)
+            f_friction += -D_ground * v_horizontal  # Viscous damping
 
-                w_quat = vec_to_quaternion_form(w)
-                dqdt = 0.5*otimes(q, w_quat)
-
-                # Angular dynamics with contact torque
-                J_w = self.J @ w
-                M_com_offset = -np.cross(self.r_off, f*self.e3)
-                M_applied = M + M_com_offset + M_contact_total - np.cross(w, J_w)
-
-                # Simple angular damping for ground contact
-                M_viscous = -100 * w
-
-                dwdt = self.J_inv @ (M_applied + M_viscous)
-
+            f_ground = f_normal + f_friction
         else:
-            # If not in contact with ground
-            dpdt = v_world
-            dvdt = 1/self.m * R @ (f*self.e3) + self.g_vec
+            f_ground = np.zeros(3)
 
-            w_quat = vec_to_quaternion_form(w)
-            dqdt = 0.5*otimes(q, w_quat)
-            J_w = self.J @ w
-            dwdt = self.J_inv @ (M - np.cross(w,J_w)
-                             - np.cross(self.r_off, f*self.e3))
+        # Linear dynamics
+        dpdt = v_world
+        dvdt = 1/self.m * (R @ (f*self.e3) + f_ground) + self.g_vec
+
+        # Angular dynamics (simplified - no ground torque)
+        w_quat = vec_to_quaternion_form(w)
+        dqdt = 0.5*otimes(q, w_quat)
+        J_w = self.J @ w
+        dwdt = self.J_inv @ (M - np.cross(w,J_w)
+                         - np.cross(self.r_off, f*self.e3))
 
         return self.pack_state(dpdt, dvdt, dqdt, dwdt)
