@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
 
 
 def setup_plot_style():
@@ -65,10 +66,63 @@ def plot_results(control_type, dob_type,
     fig3_speed, fig3_accel = create_rotor_figure(t_plot, w_rotor, alpha_rotor, title_str)
     fig4 = create_disturbance_figure(t_plot, f_est, tau_est, title_str)
     fig5 = create_parameter_figure(t_plot, m_est, com_x_est, com_y_est, true_dynamic_params, title_str)
+    fig6 = create_3d_trajectory_figure(pos, pos_des, title_str)  # 새로운 3D trajectory figure
 
     plt.show()
 
-    return fig1, fig2, fig3_speed, fig3_accel, fig4, fig5
+    return fig1, fig2, fig3_speed, fig3_accel, fig4, fig5, fig6
+
+
+def create_3d_trajectory_figure(pos, pos_des, title_str):
+    """Figure 6: 3D Position Trajectory Tracking"""
+    fig = plt.figure(figsize=(12, 10))
+    fig.suptitle(f'{title_str} - 3D Trajectory Tracking', fontsize=18, fontweight='bold')
+
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot actual trajectory
+    ax.plot(pos[:, 0], pos[:, 1], pos[:, 2],
+            'b-', linewidth=2.5, label='Actual trajectory')
+
+    # Plot desired trajectory
+    ax.plot(pos_des[:, 0], pos_des[:, 1], pos_des[:, 2],
+            'r--', linewidth=2, label='Desired trajectory')
+
+    # Mark start and end points
+    ax.scatter(pos[0, 0], pos[0, 1], pos[0, 2],
+               c='g', marker='o', s=100, label='Start', edgecolors='k', linewidths=1.5)
+    ax.scatter(pos[-1, 0], pos[-1, 1], pos[-1, 2],
+               c='r', marker='s', s=100, label='End', edgecolors='k', linewidths=1.5)
+
+    # Set labels
+    ax.set_xlabel(r'$x$ [m]', fontsize=14)
+    ax.set_ylabel(r'$y$ [m]', fontsize=14)
+    ax.set_zlabel(r'$z$ [m]', fontsize=14)
+
+    # Set equal aspect ratio for better visualization
+    max_range = np.array([
+        pos[:, 0].max() - pos[:, 0].min(),
+        pos[:, 1].max() - pos[:, 1].min(),
+        pos[:, 2].max() - pos[:, 2].min()
+    ]).max() / 2.0
+
+    mid_x = (pos[:, 0].max() + pos[:, 0].min()) * 0.5
+    mid_y = (pos[:, 1].max() + pos[:, 1].min()) * 0.5
+    mid_z = (pos[:, 2].max() + pos[:, 2].min()) * 0.5
+
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    # Grid and legend
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=12, loc='upper left')
+
+    # Set viewing angle
+    ax.view_init(elev=20, azim=45)
+
+    fig.tight_layout()
+    return fig
 
 
 def create_state_figure(t, pos, vel, roll, pitch, yaw, pos_des, vel_des, yaw_des, title_str):
@@ -294,7 +348,7 @@ def create_parameter_figure(t, m_est, com_x_est, com_y_est, true_dynamic_params,
     true_com_y = true_dynamic_params['com_offset'][1]
 
     # Mass estimate
-    axes[0].plot(t, m_est, 'b-', label = r'$\hat{m}$', linewidth=2)
+    axes[0].plot(t, m_est, 'b-', label=r'$\hat{m}$', linewidth=2)
     axes[0].axhline(y=true_mass, color='r', linestyle='--', label='True mass', linewidth=2)
     axes[0].set_ylabel(r'$\hat{m}$ [kg]')
     axes[0].set_xlabel('time [s]')
@@ -302,17 +356,19 @@ def create_parameter_figure(t, m_est, com_x_est, com_y_est, true_dynamic_params,
     axes[0].grid(True)
 
     # CoM x offset
-    axes[1].plot(t, com_x_est, 'b-', label = r'$\hat{x}_{offset}$', linewidth=2)
-    axes[1].axhline(y=true_com_x, color='r', linestyle='--', label=r'$x_{offset,true}', linewidth=2)
+    axes[1].plot(t, com_x_est, 'b-', label=r'$\hat{x}_{\mathrm{offset}}$', linewidth=2)
+    axes[1].axhline(y=true_com_x, color='r', linestyle='--', label=r'$x_{\mathrm{offset,true}}$', linewidth=2)
     axes[1].set_ylabel(r'$\hat{x}_{\mathrm{CoM}}$ [m]')
     axes[1].set_xlabel('time [s]')
+    axes[1].legend()
     axes[1].grid(True)
 
     # CoM y offset
-    axes[2].plot(t, com_y_est, 'b-', linewidth=2)
-    axes[2].axhline(y=true_com_y, color='r', linestyle='--', label=r'$y_{offset,true}', linewidth=2)
+    axes[2].plot(t, com_y_est, 'b-', label=r'$\hat{y}_{\mathrm{offset}}$', linewidth=2)
+    axes[2].axhline(y=true_com_y, color='r', linestyle='--', label=r'$y_{\mathrm{offset,true}}$', linewidth=2)
     axes[2].set_ylabel(r'$\hat{y}_{\mathrm{CoM}}$ [m]')
     axes[2].set_xlabel('time [s]')
+    axes[2].legend()
     axes[2].grid(True)
 
     fig.tight_layout()
