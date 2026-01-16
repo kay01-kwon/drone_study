@@ -73,13 +73,13 @@ class DynamicParamEstimator:
         return self.r_offset_est
 
     def get_com_variance(self):
-        return np.concatenate([self.P_com_x, self.P_com_y])
+        return np.array([self.P_com_x, self.P_com_y])
 
     def get_parameter_estimate(self):
-        return np.concatenate([self.m_est, self.r_offset_est])
+        return np.array([self.m_est, self.r_offset_est[0], self.r_offset_est[1]])
 
     def get_parameter_variance(self):
-        return np.concatenate([self.P_m, self.P_com_x, self.P_com_y])
+        return np.array([self.P_m, self.P_com_x, self.P_com_y])
 
     def _unpack_disturbance_estimate(self, disturbance_estimate):
         f_ext = disturbance_estimate[0:3]
