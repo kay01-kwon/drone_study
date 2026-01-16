@@ -393,8 +393,8 @@ Examples:
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
-    # Initialize well above ground to avoid ground contact issues during testing
-    initial_pos = [0.0, 0.0, 0.5]  # 0.5m above ground
+    # Initialize at ground level (like Gazebo)
+    initial_pos = [0.0, 0.0, 0.0]  # Ground level
     s_drone, s_rotor = state_initialize(w_rotor_idle, initial_offset=initial_pos)
 
     # Simulation parameters

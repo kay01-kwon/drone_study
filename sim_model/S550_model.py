@@ -96,14 +96,38 @@ class S550_Sim_Model:
         q = q/np.linalg.norm(q,2)
         f, M = self.unpack_control_input(u)
 
-        # No ground contact - simplified dynamics
+        # Simple ground contact (like Gazebo)
         R = quaternion_to_rotm(q)
+        z = p[2]
+
+        # Ground contact force (simple spring-damper)
+        if z < 0.0:
+            K_ground = 5000.0  # N/m
+            D_ground = 200.0   # N*s/m
+            mu = 0.8           # Friction coefficient
+
+            # Normal force
+            f_normal = np.array([0.0, 0.0, -K_ground * z - D_ground * v_world[2]])
+            f_normal[2] = max(0.0, f_normal[2])  # Only upward
+
+            # Friction force (proportional to normal force and velocity)
+            v_horizontal = np.array([v_world[0], v_world[1], 0.0])
+            v_h_norm = np.linalg.norm(v_horizontal)
+            if v_h_norm > 1e-6:
+                f_friction = -mu * f_normal[2] * v_horizontal / v_h_norm
+            else:
+                f_friction = np.zeros(3)
+            f_friction += -D_ground * v_horizontal  # Viscous damping
+
+            f_ground = f_normal + f_friction
+        else:
+            f_ground = np.zeros(3)
 
         # Linear dynamics
         dpdt = v_world
-        dvdt = 1/self.m * R @ (f*self.e3) + self.g_vec
+        dvdt = 1/self.m * (R @ (f*self.e3) + f_ground) + self.g_vec
 
-        # Angular dynamics
+        # Angular dynamics (simplified - no ground torque)
         w_quat = vec_to_quaternion_form(w)
         dqdt = 0.5*otimes(q, w_quat)
         J_w = self.J @ w
