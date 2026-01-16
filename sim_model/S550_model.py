@@ -124,8 +124,8 @@ class S550_Sim_Model:
             if z_contact <= 0.0:  # Contact detected
                 contact_detected = True
 
-                # Penetration depth
-                penetration = -z_contact
+                # Penetration depth (limit to prevent extreme forces)
+                penetration = min(-z_contact, 0.05)  # Max 5cm penetration
 
                 # Contact point velocity (world frame)
                 r_contact_body = contact_point_body  # Vector from COM to contact in body
@@ -134,9 +134,9 @@ class S550_Sim_Model:
                 vy_c = v_contact_world[1]
                 vz_c = v_contact_world[2]
 
-                # Normal force at this contact point
+                # Normal force at this contact point (with saturation)
                 N = K_ground * penetration - D_ground * vz_c
-                N = max(0.0, N)  # Only push, no pull
+                N = np.clip(N, 0.0, 1000.0)  # Limit max force to 1000N
                 f_normal = np.array([0.0, 0.0, N])
 
                 # Friction force - simplified kinetic friction
@@ -162,37 +162,13 @@ class S550_Sim_Model:
                 M_contact_total += M_contact
 
         if contact_detected:
-            # Check if tipped over (roll or pitch > 80 degrees)
-            roll, pitch, yaw = quaternion_to_euler(q)
-            tipped_over = (abs(roll) > self.tip_over_angle) or (abs(pitch) > self.tip_over_angle)
+            # Ground contact: linear dynamics only, freeze orientation
+            dpdt = v_world
+            dvdt = 1.0/self.m * (R@(f*self.e3) + self.m*self.g_vec + f_contact_total)
 
-            if tipped_over:
-                # Stuck condition: very strong damping
-                dpdt = v_world
-                dvdt = 1.0/self.m * (R@(f*self.e3) + self.m*self.g_vec + f_contact_total)
-
-                w_quat = vec_to_quaternion_form(w)
-                dqdt = 0.5*otimes(q, w_quat)
-
-                # Extremely strong damping when tipped over
-                dwdt = -500 * w
-            else:
-                # Normal ground contact
-                dpdt = v_world
-                dvdt = 1.0/self.m * (R@(f*self.e3) + self.m*self.g_vec + f_contact_total)
-
-                w_quat = vec_to_quaternion_form(w)
-                dqdt = 0.5*otimes(q, w_quat)
-
-                # Angular dynamics with contact torque
-                J_w = self.J @ w
-                M_com_offset = -np.cross(self.r_off, f*self.e3)
-                M_applied = M + M_com_offset + M_contact_total - np.cross(w, J_w)
-
-                # Simple angular damping for ground contact
-                M_viscous = -100 * w
-
-                dwdt = self.J_inv @ (M_applied + M_viscous)
+            # Freeze orientation changes on ground
+            dqdt = np.zeros(4)
+            dwdt = -1000 * w  # Very strong damping to quickly stop rotation
 
         else:
             # If not in contact with ground
