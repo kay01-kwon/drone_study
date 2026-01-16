@@ -36,7 +36,7 @@ from utils.drone_converter import HexaConverter
 from utils.math_tool import quaternion_to_euler
 from utils import yaml_loader
 from utils.custom_ode import custom_rk4
-from matplotlib import pyplot as plt
+from utils.print_tool import print_statistics
 
 def main():
     # Parse command line arguments
@@ -273,10 +273,15 @@ def main():
                  rotor_state_data, ref_data, dob_data, param_est_data,
                  params['true_dynamic_params'])
 
+    print_statistics(control_type, dob_type,
+                     drone_state_data, rotor_state_data,
+                     ref_data, dob_data, param_est_data,
+                     params['true_dynamic_params'])
+
     # Cleanup for NMPC
     if control_type == 'nmpc_param' or control_type == 'nmpc_comp':
         from utils.acados_cleanup import cleanup_acados_files
-        cleanup_acados_files(controller.get_json_file_from_name())
+        cleanup_acados_files(controller.get_json_file_name())
 
 
 
