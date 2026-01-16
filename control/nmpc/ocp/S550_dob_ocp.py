@@ -4,7 +4,7 @@ from utils.math_tool import quaternion_to_rotm
 from scipy.linalg import block_diag
 import numpy as np
 
-class S550SimpleOcp:
+class S550DobOcp:
     def __init__(self, DynParam = None, DroneParam = None, MpcParam = None):
         '''
         Constructor

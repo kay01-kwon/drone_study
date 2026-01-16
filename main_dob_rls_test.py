@@ -143,12 +143,11 @@ def setup_controller(control_type, dob_type, params):
 
     # Setup controller using NOMINAL parameters
     if control_type == 'nmpc':
-        from control.nmpc.ocp.S550_simple_ocp import S550SimpleOcp
+        from control.nmpc.ocp.S550_dob_ocp import S550DobOcp
 
-        controller = S550SimpleOcp(DynParam=params['nominal_dynamic_params'],
-                                   DroneParam=params['nominal_drone_params'],
-                                   MpcParam=params['nmpc_params'])
-
+        controller = S550DobOcp(DynParam=params['nominal_dynamic_params'],
+                                DroneParam=params['nominal_drone_params'],
+                                MpcParam=params['nmpc_params'])
     elif control_type == 'pd':
         from control.PID.geometric_control import GeometricControl
 
@@ -417,9 +416,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 main_dob_direct_compensation.py --control nmpc --dob none
-  python3 main_dob_direct_compensation.py --control pd --dob hgdo
-  python3 main_dob_direct_compensation.py --control pd --dob l1
+  python3 main_dob_w_rls.py --control nmpc --dob none
+  python3 main_dob_w_rls.py --control pd --dob hgdo
+  python3 main_dob_w_rls.py --control pd --dob l1
         """)
 
     parser.add_argument('--control', type=str, default='nmpc',
@@ -440,7 +439,7 @@ Examples:
 
     # Validate combination
     if control_type == 'nmpc' and dob_type != 'none':
-        print(f"Warning: NMPC typically doesn't use external DOB. Using DOB: {dob_type}")
+        print(f"NMPC with DOB and Dynamic parameter estimator: {dob_type}")
 
     # Load all parameters from split config files
     params = load_parameters(control_type, dob_type)
@@ -462,6 +461,7 @@ Examples:
                                                     RotorParam=params['nominal_rotor_params'],
                                                     DroneParam=params['nominal_drone_params'],
                                                     RlsParam=params['rls_params'])
+    param_est = np.zeros(3)
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
@@ -534,24 +534,19 @@ Examples:
         if dob is not None and i > 1:
             dynamic_param_estimator.update(s_feedback, disturbance_estimate, s_rotor[:6])
 
+        param_est = dynamic_param_estimator.get_parameter_estimate()
+
         # Store parameter estimates
-        m_est_hist.append(dynamic_param_estimator.get_mass_estimate())
+        m_est = dynamic_param_estimator.get_mass_estimate()
         com_est = dynamic_param_estimator.get_com_estimate()
+
+        m_est_hist.append(m_est)
         com_x_est_hist.append(com_est[0])
         com_y_est_hist.append(com_est[1])
 
         # Compute control
         if control_type == 'nmpc':
-            status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i])
-
-            if dob is not None:
-                u_mpc = hexa_converter.compute_u(w_cmd)
-                u_match = np.array([disturbance_estimate[2],    # fz
-                                   disturbance_estimate[3],     # Mx
-                                   disturbance_estimate[4],     # My
-                                   disturbance_estimate[5]])    # Mz
-                u_comp = u_mpc - u_match
-                w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
+            status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i], s_rotor[:6], param_est)
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t={t_sim[i]:.2f}s")
