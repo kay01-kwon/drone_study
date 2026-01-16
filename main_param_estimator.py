@@ -22,6 +22,7 @@ Examples:
 import numpy as np
 import argparse
 
+from control.nmpc.ocp.S550_param_ocp import S550ParamOcp
 from sim_model.S550_model import S550_Sim_Model
 from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
@@ -143,9 +144,9 @@ def setup_controller(control_type, dob_type, params):
 
     # Setup controller using NOMINAL parameters
     if control_type == 'nmpc':
-        from control.nmpc.ocp.S550_dob_ocp import S550DobOcp
+        from control.nmpc.ocp.S550_param_ocp import S550ParamOcp
 
-        controller = S550DobOcp(DynParam=params['nominal_dynamic_params'],
+        controller = S550ParamOcp(DynParam=params['nominal_dynamic_params'],
                                 DroneParam=params['nominal_drone_params'],
                                 MpcParam=params['nmpc_params'])
     elif control_type == 'pd':
@@ -546,7 +547,7 @@ Examples:
 
         # Compute control
         if control_type == 'nmpc':
-            status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i], u_prev=None, DobCoeff=param_est)
+            status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i], u_prev=None, param_est=param_est)
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t={t_sim[i]:.2f}s")
