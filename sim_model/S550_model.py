@@ -98,6 +98,7 @@ class S550_Sim_Model:
             D_ground = 100
             mu_friction = 0.5  # Friction coefficient (static/kinetic)
             v_threshold = 1e-3  # Velocity threshold for static friction [m/s]
+            epsilon = 1e-8  # Small number to prevent division by zero
 
             # Normal force (only upward)
             N = max(0.0, -K_ground*z - D_ground*vz)
@@ -121,15 +122,15 @@ class S550_Sim_Model:
                     f_friction = -f_applied_h
                 else:
                     # Break static friction: kinetic friction
-                    f_friction = -mu_friction * N * f_applied_h / f_applied_h_norm
+                    f_friction = -mu_friction * N * f_applied_h / (f_applied_h_norm + epsilon)
             else:  # Moving: kinetic friction
-                f_friction = -mu_friction * N * v_horizontal / v_h_norm
+                f_friction = -mu_friction * N * v_horizontal / (v_h_norm + epsilon)
 
             # Add viscous damping
             f_friction += -D_ground * v_horizontal
 
-            f_total = (f_friction + f_normal
-                       + R@(f*self.e3) + self.m*self.g_vec)
+            # Total force = applied force + friction
+            f_total = f_applied + f_friction
             dpdt = v_world
             dvdt = 1.0/self.m * f_total
 
@@ -158,13 +159,14 @@ class S550_Sim_Model:
                     M_friction = -M_applied
                 else:
                     # Break static friction: kinetic friction torque
-                    M_friction = -M_static_max * M_applied / M_applied_norm
+                    M_friction = -M_static_max * M_applied / (M_applied_norm + epsilon)
             else:  # Rotating: kinetic friction torque
-                M_friction = -mu_angular * N * arm_length_eff * w / w_norm
+                M_friction = -mu_angular * N * arm_length_eff * w / (w_norm + epsilon)
 
             # Viscous angular damping
             M_viscous = -50 * w
 
+            # Total angular acceleration
             dwdt = self.J_inv @ (M_applied + M_friction + M_viscous)
 
         else:
