@@ -8,7 +8,7 @@ S550 simulation model
 
 import numpy as np
 from dataclasses import dataclass
-from utils.math_tool import quaternion_to_rotm, vec_to_quaternion_form, otimes
+from utils.math_tool import quaternion_to_rotm, vec_to_quaternion_form, otimes, quaternion_to_euler
 from typing import Tuple
 
 @dataclass
@@ -141,13 +141,20 @@ class S550_Sim_Model:
             J_w = self.J @ w
             M_com_offset = -np.cross(self.r_off, f*self.e3)
 
+            # Ground contact orientation restoring torque
+            # When tilted, contact point shifts and creates restoring moment
+            roll, pitch, yaw = quaternion_to_euler(q)
+            K_orient = 50.0  # Orientation restoring stiffness [Nm/rad]
+            D_orient = 20.0  # Orientation damping [Nm*s/rad]
+            M_restoring = -K_orient * np.array([roll, pitch, 0.0]) - D_orient * np.array([w[0], w[1], 0.0])
+
             # Calculate applied moment (excluding friction)
-            M_applied = M + M_com_offset - np.cross(w, J_w)
+            M_applied = M + M_com_offset - np.cross(w, J_w) + M_restoring
 
             # Ground friction torque (Static vs Kinetic)
             w_norm = np.linalg.norm(w)
-            w_threshold = 0.01  # Angular velocity threshold [rad/s]
-            mu_angular = 0.3  # Angular friction coefficient
+            w_threshold = 0.05  # Angular velocity threshold [rad/s] (increased)
+            mu_angular = 0.8  # Angular friction coefficient (increased)
             arm_length_eff = 0.3  # Effective contact arm length [m]
             M_applied_norm = np.linalg.norm(M_applied)
 
@@ -163,8 +170,8 @@ class S550_Sim_Model:
             else:  # Rotating: kinetic friction torque
                 M_friction = -mu_angular * N * arm_length_eff * w / (w_norm + epsilon)
 
-            # Viscous angular damping
-            M_viscous = -50 * w
+            # Viscous angular damping (increased for ground contact)
+            M_viscous = -200 * w
 
             # Total angular acceleration
             dwdt = self.J_inv @ (M_applied + M_friction + M_viscous)
