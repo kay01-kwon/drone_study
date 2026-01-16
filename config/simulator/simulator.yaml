@@ -1,8 +1,8 @@
 # Drone Simulation Parameters
 
 dynamic_params:
-  m: 2.9  # Mass [kg]
-  MoiArray: [0.06, 0.06, 0.09]  # Moment of inertia [kg*m^2]
+  m: 3.0  # Mass [kg]
+  MoiArray: [0.065, 0.065, 0.10]  # Moment of inertia [kg*m^2]
   com_offset: [-0.02, 0.03, 0.0]  # Center of mass offset [m]
 
 drone_params:

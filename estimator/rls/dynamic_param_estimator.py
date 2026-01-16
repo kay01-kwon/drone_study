@@ -32,6 +32,9 @@ class DynamicParamEstimator:
 
     def update(self, state, disturbance_estimate, rotor_speed):
 
+        # Get altitude
+        z = state[2]
+
         # Update mass
         q = state[6:10]
         R_b_w = quaternion_to_rotm(q)
