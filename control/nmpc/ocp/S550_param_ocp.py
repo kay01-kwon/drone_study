@@ -13,9 +13,11 @@ class S550ParamOcp:
         :param MpcParam: t_horizon, n_nodes, QArray, RArray
         '''
         if DynParam is None:
-            m = 3.0
+            m = 2.9
             J = np.array([0.06, 0.06, 0.08])
             DynParam = {'m': m, 'MoiArray': J}
+        else:
+            m = DynParam['m']
 
         u_max = 1.4765e-7 * 7300.0**2
         u_min = 1.4765e-7 * 2000.0**2
@@ -75,7 +77,7 @@ class S550ParamOcp:
         self.n_params = acados_model.p.rows()
 
         # Default parameter values
-        self.p_default = np.zeros(self.n_params)
+        self.p_default = np.array([m, 0.0, 0.0])
         #***************************************************
 
         # 1. Cost setup
@@ -141,7 +143,7 @@ class S550ParamOcp:
 
         print(f"✓ NMPC created with {self.n_params} parameters")
 
-    def solve(self, state, ref, u_prev=None, DobCoeff = None):
+    def solve(self, state, ref, param_est = None, u_prev=None):
         '''
         Solve OCP problem with warm start
         :param state: p (World), v (Body), q, w (Body)
@@ -155,10 +157,10 @@ class S550ParamOcp:
             u_prev = np.zeros((6,))
 
         #***********************************************
-        if DobCoeff is None:
+        if param_est is None:
             params = self.p_default
         else:
-            params = DobCoeff
+            params = param_est
         #***********************************************
 
         self.ref_nmpc[0:6] = ref[0:6]

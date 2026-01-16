@@ -87,9 +87,11 @@ class S550ParamModel:
         :return: dvdt ( World frame )
         '''
 
+        # Get dynamic parameter
+        m_est = self.param[0]
+        delta_m = self.m / m_est - 1.0
+
         # Collective thrust
-        # f_col = (self.u1 + self.u2 + self.u3
-        #          + self.u4 + self.u5 + self.u6)
         f_col = self._compute_collective_thrust()
 
         # Force in 3 dim ( Body frame )
@@ -102,7 +104,9 @@ class S550ParamModel:
         R = cs_math_tool.quaternion_to_rotm(self.q)
 
         dvdt = cs.mtimes(R, acc_input) + g_vec
-        return dvdt
+        dvdt_delta = delta_m*cs.mtimes(R, acc_input)
+        dvdt_combined = dvdt + dvdt_delta
+        return dvdt_combined
 
     def _q_dynamics(self):
         '''
