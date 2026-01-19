@@ -50,7 +50,7 @@ def print_statistics(control_type, dob_type,
     yaw_error_rad = np.arctan2(np.sin(yaw_error_rad), np.cos(yaw_error_rad))
     yaw_error_deg = np.degrees(yaw_error_rad)
 
-    print(f"Final yaw: {yaw[-1]:.2f}°, Desired: {np.degrees(yaw_des[-1]):.2f}°")
+    print(f"Final yaw: {np.degrees(yaw[-1]):.2f}°, Desired: {np.degrees(yaw_des[-1]):.2f}°")
     print(f"Final yaw error: {abs(yaw_error_deg[-1]):.2f}°")
     print(f"Mean yaw error: {np.mean(np.abs(yaw_error_deg)):.2f}°")
     print(f"Max yaw error: {np.max(np.abs(yaw_error_deg)):.2f}°")
