@@ -170,10 +170,11 @@ def main():
         if dob is not None and i > 1:
             d_est = dob.dob_estimate(t_sim[i-1], t_sim[i],
                                      s_rotor[:6], s_feedback)
+            # Update RLS only when DOB is active
+            dynamic_param_estimator.update(s_feedback, d_est, s_rotor[:6])
         else:
             d_est = np.zeros(6)
 
-        dynamic_param_estimator.update(s_feedback, d_est, s_rotor[:6])
         param_est = dynamic_param_estimator.get_parameter_estimate()
 
         f_est = d_est[0:3]
@@ -240,7 +241,7 @@ def main():
                                      s_rotor, w_cmd, t_ode)
 
         # Hard clamp for rotor acceleration
-        s_rotor = np.clip(s_rotor, -alpha_max, alpha_max)
+        s_rotor[6:] = np.clip(s_rotor[6:], -alpha_max, alpha_max)
         u = hexa_converter.compute_u(s_rotor[:6])
 
         # Simulate drone dynamics

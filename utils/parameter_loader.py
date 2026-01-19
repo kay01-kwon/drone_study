@@ -68,7 +68,7 @@ def load_parameters(control_type, dob_type):
     # 5. Load trajectory and regulation parameters
     config_traj = yaml_loader.load_yaml('config/trajectory/trajectory.yaml')
     params['trajectory_params'] = yaml_loader.get_trajectory_params(config_traj)
-    params['regulration_params'] = yaml_loader.get_regulation_params(config_traj)
+    params['regulation_params'] = yaml_loader.get_regulation_params(config_traj)
 
     return params
 
