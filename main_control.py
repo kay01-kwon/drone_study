@@ -6,6 +6,7 @@ Supports multiple control methods, disturbance observers and dynamic parameter e
 Control types:
 - nmpc_comp: NMPC compensation DOB
 - nmpc_param: NMPC Param --> DOB mendatory (Default l1)
+- nmpc_actuator: NMPC with 2nd-order actuator dynamics
 - pd: Geometric control
 
 DOB types:
@@ -47,13 +48,14 @@ def main():
     Examples:
         python3 main_control.py --control nmpc_comp --dob none
         python3 main_control.py --control nmpc_param --dob hgdo
+        python3 main_control.py --control nmpc_actuator --dob l1
         python3 main_control.py --control pd --dob hgdo
         """
     )
 
     parser.add_argument('--control', type=str, default='nmpc',
-                       choices=['nmpc_comp', 'nmpc_param', 'pd'],
-                       help='Control method: nmpc_comp (DOB Compensation), nmpc_param (Dynamic param) or pd (Geometric)')
+                       choices=['nmpc_comp', 'nmpc_param', 'nmpc_actuator', 'pd'],
+                       help='Control method: nmpc_comp (DOB Compensation), nmpc_param (Dynamic param), nmpc_actuator (Actuator-aware) or pd (Geometric)')
 
     parser.add_argument('--dob', type=str, default='l1',
                        choices=['none', 'hgdo', 'l1'],
@@ -229,6 +231,15 @@ def main():
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t={t_sim[i]:.2f}s")
 
+        elif control_type == 'nmpc_actuator':
+            # Full 25-dim state: [p, v, q, w, w_rot, alpha_rot]
+            s_full = np.concatenate([s_feedback, w_rotor, alpha_rotor])
+            status, w_cmd = controller.solve_for_trajectory(s_full, t_sim[i],
+                                                            param_est=param_est,
+                                                            u_prev=None)
+            if status != 0 and i % 100 == 0:
+                print(f"Warning: NMPC actuator solver status {status} at t={t_sim[i]:.2f}s")
+
         elif control_type == 'pd':
             u = controller.compute_u(s_feedback, ref, d_est)
             w_cmd = hexa_converter.compute_des_rotor_speed(u)
@@ -281,7 +292,7 @@ def main():
                      params['true_dynamic_params'])
 
     # Cleanup for NMPC
-    if control_type == 'nmpc_param' or control_type == 'nmpc_comp':
+    if control_type in ('nmpc_param', 'nmpc_comp', 'nmpc_actuator'):
         from utils.acados_cleanup import cleanup_acados_files
         cleanup_acados_files(controller.get_json_file_name())
 

@@ -1,0 +1,37 @@
+# Nominal dynamics parameter
+dynamic_params:
+  m: 2.9  # Mass [kg]
+  MoiArray: [0.06, 0.06, 0.09]  # Moment of inertia [kg*m^2]
+  com_offset: [0.0, 0.0, 0.0]  # Center of mass offset [m]
+
+drone_params:
+  arm_length: 0.265  # Arm length [m]
+  motor_const: 1.465e-7  # Motor thrust constant
+  moment_const: 0.01569  # Motor moment constant
+
+rotor_params:
+  p: [25.16687, 0.003933, 515.605]  # Rotor model parameters [p1, p2, p3]
+  w_rotor_min: 2000  # Minimum rotor speed [RPM]
+  w_rotor_max: 7200  # Maximum rotor speed [RPM]
+  alpha_rotor_max: 15000  # Maximum rotor acceleration [RPM/s]
+  jerk_rotor_max: 250000  # Maximum rotor jerk [RPM/s^2]
+  num_rotors: 6  # Number of rotors
+
+# Actuator parameters for 2nd-order model in NMPC
+actuator_params:
+  p1: 25.16687    # Damping coefficient
+  p2: 0.003933    # Speed-dependent damping
+  p3: 515.605     # Stiffness (bandwidth^2)
+  alpha_max: 15000  # Max rotor acceleration [rad/s^2]
+  j_max: 250000     # Max jerk [rad/s^3]
+
+nmpc_params:
+  t_horizon: 1.0
+  n_nodes: 20
+  QArray: [ 2.0, 2.0, 10.0,               # px, py, pz
+            1.0, 1.0, 7.0,                # vx, vy, vz
+            10.0, 10.0, 10.0, 10.0,        # qw, qx, qy, qz
+            5.0, 5.0, 5.0,                # wx, wy, wz
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, # w_rot (rotor speed)
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ]# alpha_rot (rotor acceleration)
+  RArray: [ 0.1 ]  # w_cmd_1 ... w_cmd_6

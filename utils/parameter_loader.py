@@ -35,7 +35,17 @@ def load_parameters(control_type, dob_type):
     params['sim_params'] = yaml_loader.get_sim_params(config_sim)
 
     # 2. Load NOMINAL and control related parameters from control config (used for controller AND DOB)
-    if control_type == "nmpc_comp" or control_type == "nmpc_param":
+    if control_type == "nmpc_actuator":
+        config_control = yaml_loader.load_yaml('config/control/nmpc/nmpc_actuator.yaml')
+        params['nmpc_params'] = yaml_loader.get_nmpc_params(config_control)
+        params['actuator_params'] = yaml_loader.get_actuator_params(config_control)
+
+        # Load nominal dynamic params from control config
+        params['nominal_dynamic_params'] = yaml_loader.get_dynamic_params(config_control)
+        params['nominal_drone_params'] = yaml_loader.get_drone_params(config_control)
+        params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
+
+    elif control_type == "nmpc_comp" or control_type == "nmpc_param":
         config_control = yaml_loader.load_yaml('config/control/nmpc/nmpc_params.yaml')
         params['nmpc_params'] = yaml_loader.get_nmpc_params(config_control)
 
@@ -104,6 +114,14 @@ def setup_controller(control_type, dob_type, params):
         controller = S550ParamOcp(DynParam=params['nominal_dynamic_params'],
                                   DroneParam=params['nominal_drone_params'],
                                   MpcParam=params['nmpc_params'])
+
+    elif control_type == 'nmpc_actuator':
+        from control.nmpc.ocp.S550_actuator_ocp import S550ActuatorOcp
+
+        controller = S550ActuatorOcp(DynParam=params['nominal_dynamic_params'],
+                                     DroneParam=params['nominal_drone_params'],
+                                     MpcParam=params['nmpc_params'],
+                                     ActuatorParam=params['actuator_params'])
 
     elif control_type == 'pd':
         from control.PID.geometric_control import GeometricControl

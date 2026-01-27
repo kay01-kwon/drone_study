@@ -65,6 +65,16 @@ def get_nmpc_params(config):
     }
     return nmpc_params
 
+def get_actuator_params(config):
+    actuator_params = {
+        'p1': config['actuator_params']['p1'],
+        'p2': config['actuator_params']['p2'],
+        'p3': config['actuator_params']['p3'],
+        'alpha_max': config['actuator_params']['alpha_max'],
+        'j_max': config['actuator_params']['j_max'],
+    }
+    return actuator_params
+
 def get_trajectory_params(config):
     trajectory_params = {
         'max_velocity': config['trajectory']['max_velocity'],
