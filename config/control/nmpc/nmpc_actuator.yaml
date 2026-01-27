@@ -28,10 +28,12 @@ actuator_params:
 nmpc_params:
   t_horizon: 1.0
   n_nodes: 20
+  # Rigid body state weights (13)
   QArray: [ 2.0, 2.0, 10.0,               # px, py, pz
             1.0, 1.0, 7.0,                # vx, vy, vz
             10.0, 10.0, 10.0, 10.0,        # qw, qx, qy, qz
-            5.0, 5.0, 5.0,                # wx, wy, wz
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, # w_rot (rotor speed)
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ]# alpha_rot (rotor acceleration)
-  RArray: [ 0.1 ]  # w_cmd_1 ... w_cmd_6
+            5.0, 5.0, 5.0 ]               # wx, wy, wz
+  # Actuator state weights (single value, applied to all 6 rotors each)
+  Q_w_rot: 0.0        # w_rot weight (rotor speed tracking)
+  Q_alpha_rot: 0.0    # alpha_rot weight (rotor acceleration)
+  RArray: [ 0.1 ]     # w_cmd weight (applied to all 6)

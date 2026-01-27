@@ -2,6 +2,7 @@ from acados_template import AcadosOcp, AcadosOcpSolver
 from control.nmpc.model.S550_actuator_model import S550ActuatorModel
 from utils.math_tool import quaternion_to_rotm
 from scipy.linalg import block_diag
+import casadi as cs
 import numpy as np
 
 
@@ -16,7 +17,7 @@ class S550ActuatorOcp:
 
         :param DynParam: m, MoiArray (Jxx, Jyy, Jzz)
         :param DroneParam: arm_length, motor_const, moment_const
-        :param MpcParam: t_horizon, n_nodes, QArray, RArray
+        :param MpcParam: t_horizon, n_nodes, QArray, Q_w_rot, Q_alpha_rot, RArray
         :param ActuatorParam: p1, p2, p3, alpha_max, j_max
         '''
         if DynParam is None:
@@ -43,21 +44,27 @@ class S550ActuatorOcp:
         if MpcParam is None:
             t_horizon = 0.20
             n_nodes = 20
-            # Cost weights for 25-state model
-            Q = np.diag([
-                1.0, 1.0, 1.0,              # px, py, pz
-                0.5, 0.5, 0.5,              # vx, vy, vz
-                0.5, 0.5, 0.5, 0.5,         # qw, qx, qy, qz
-                0.05, 0.05, 0.05,           # wx, wy, wz
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # w_rot (no tracking cost)
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # alpha_rot (no tracking cost)
+            Q_rigid = np.diag([
+                1.0, 1.0, 1.0,
+                0.5, 0.5, 0.5,
+                0.5, 0.5, 0.5, 0.5,
+                0.05, 0.05, 0.05,
             ])
-            R = np.diag([0.01] * 6)          # u_cmd
+            Q_w_rot = 0.0
+            Q_alpha_rot = 0.0
+            R = np.diag([0.01] * 6)
         else:
             t_horizon = MpcParam['t_horizon']
             n_nodes = MpcParam['n_nodes']
-            Q = np.diag(MpcParam['QArray'])
+            Q_rigid = np.diag(MpcParam['QArray'])   # 13x13
+            Q_w_rot = MpcParam.get('Q_w_rot', 0.0)
+            Q_alpha_rot = MpcParam.get('Q_alpha_rot', 0.0)
             R = MpcParam['RArray'][0] * np.eye(6)
+
+        # Build full 25x25 Q from rigid(13) + w_rot(6) + alpha_rot(6)
+        Q = block_diag(Q_rigid,
+                        Q_w_rot * np.eye(6),
+                        Q_alpha_rot * np.eye(6))
 
         self.ocp = AcadosOcp()
 
@@ -81,9 +88,10 @@ class S550ActuatorOcp:
         x0 = np.zeros(nx)
         x0[6] = 1.0                          # qw = 1
         x0[13:19] = self.w_hover              # w_rot at hover
-        # alpha_rot = 0 (already zero)
 
+        # ============================================================
         # 1. Cost setup (LINEAR_LS)
+        # ============================================================
         self.ocp.cost.cost_type = 'LINEAR_LS'
         self.ocp.cost.cost_type_e = 'LINEAR_LS'
 
@@ -100,7 +108,9 @@ class S550ActuatorOcp:
         self.ocp.cost.yref = np.concatenate((x0, np.zeros(nu)))
         self.ocp.cost.yref_e = x0
 
+        # ============================================================
         # 2. Constraints
+        # ============================================================
         self.ocp.constraints.x0 = x0
 
         # Control input bounds (commanded rotor speed)
@@ -108,13 +118,42 @@ class S550ActuatorOcp:
         self.ocp.constraints.ubu = np.array([self.w_rot_max] * nu)
         self.ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4, 5])
 
-        # State bounds on w_rot (actual rotor speed)
-        # indices 13..18 in the 25-dim state
-        self.ocp.constraints.lbx = np.array([self.w_rot_min] * 6)
-        self.ocp.constraints.ubx = np.array([self.w_rot_max] * 6)
-        self.ocp.constraints.idxbx = np.array([13, 14, 15, 16, 17, 18])
+        # Path constraints on w_rot (nonlinear constraint h)
+        # h(x,u) = [x[13], x[14], ..., x[18]]  (actual rotor speeds)
+        # w_rot_min <= h_i <= w_rot_max
+        model_x = acados_model.x
+        h_expr = model_x[13:19]
 
+        self.ocp.model.con_h_expr = h_expr
+        self.ocp.constraints.lh = np.array([self.w_rot_min] * 6)
+        self.ocp.constraints.uh = np.array([self.w_rot_max] * 6)
+
+        # L2 penalty weights for path constraints (slack)
+        nh = 6
+        self.ocp.cost.zl = 100.0 * np.ones(nh)    # lower slack linear penalty
+        self.ocp.cost.zu = 100.0 * np.ones(nh)    # upper slack linear penalty
+        self.ocp.cost.Zl = 100.0 * np.ones(nh)    # lower slack quadratic penalty
+        self.ocp.cost.Zu = 100.0 * np.ones(nh)    # upper slack quadratic penalty
+        self.ocp.constraints.lsh = np.zeros(nh)
+        self.ocp.constraints.ush = np.zeros(nh)
+        self.ocp.constraints.idxsh = np.arange(nh)
+
+        # Terminal path constraints
+        self.ocp.model.con_h_expr_e = h_expr
+        self.ocp.constraints.lh_e = np.array([self.w_rot_min] * 6)
+        self.ocp.constraints.uh_e = np.array([self.w_rot_max] * 6)
+
+        self.ocp.cost.zl_e = 100.0 * np.ones(nh)
+        self.ocp.cost.zu_e = 100.0 * np.ones(nh)
+        self.ocp.cost.Zl_e = 100.0 * np.ones(nh)
+        self.ocp.cost.Zu_e = 100.0 * np.ones(nh)
+        self.ocp.constraints.lsh_e = np.zeros(nh)
+        self.ocp.constraints.ush_e = np.zeros(nh)
+        self.ocp.constraints.idxsh_e = np.arange(nh)
+
+        # ============================================================
         # 3. Solver options
+        # ============================================================
         self.ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         self.ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
         self.ocp.solver_options.levenberg_marquardt = 1e-1
@@ -139,7 +178,7 @@ class S550ActuatorOcp:
 
         self.previous_states = None
 
-        # Reference for the rigid-body part (13 dim)
+        # Reference for the rigid-body part (25 dim)
         self.ref_nmpc = np.zeros(nx)
         self.ref_nmpc[6] = 1.0                # qw = 1
         self.ref_nmpc[13:19] = self.w_hover    # w_rot hover reference
@@ -236,7 +275,6 @@ class S550ActuatorOcp:
         N = self.ocp.solver_options.N_horizon
         T = self.ocp.solver_options.tf
         dt = T / N
-        nx = self.x_dim if hasattr(self, 'x_dim') else 25
 
         state_transformed = self.state_transform(state)
 
