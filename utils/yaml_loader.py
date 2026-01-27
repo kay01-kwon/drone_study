@@ -60,8 +60,8 @@ def get_nmpc_params(config):
     nmpc_params = {
         't_horizon': config['nmpc_params']['t_horizon'],
         'n_nodes': config['nmpc_params']['n_nodes'],
-        'QArray': config['nmpc_params']['QArray'],
-        'RArray': config['nmpc_params']['RArray'],
+        'QArray': [float(q) for q in config['nmpc_params']['QArray']],
+        'RArray': [float(r) for r in config['nmpc_params']['RArray']],
     }
     # Optional actuator state weights (single scalar each)
     if 'Q_w_rot' in config['nmpc_params']:
