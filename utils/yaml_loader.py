@@ -65,9 +65,9 @@ def get_nmpc_params(config):
     }
     # Optional actuator state weights (single scalar each)
     if 'Q_w_rot' in config['nmpc_params']:
-        nmpc_params['Q_w_rot'] = config['nmpc_params']['Q_w_rot']
+        nmpc_params['Q_w_rot'] = float(config['nmpc_params']['Q_w_rot'])
     if 'Q_alpha_rot' in config['nmpc_params']:
-        nmpc_params['Q_alpha_rot'] = config['nmpc_params']['Q_alpha_rot']
+        nmpc_params['Q_alpha_rot'] = float(config['nmpc_params']['Q_alpha_rot'])
     return nmpc_params
 
 def get_actuator_params(config):

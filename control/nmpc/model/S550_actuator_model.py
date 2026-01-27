@@ -40,12 +40,13 @@ class S550ActuatorModel:
 
         # Actuator parameters (2nd order model)
         if ActuatorParam is None:
+            # Default setup
             ActuatorParam = {
-                'p1': 30.0,
-                'p2': 0.001,
-                'p3': 900.0,
-                'alpha_max': 15000.0,   # max rotor acceleration (rad/s^2)
-                'j_max': 300000.0,      # max jerk (rad/s^3)
+                'p1': 25.16687,
+                'p2': 0.003933,
+                'p3': 515.605,
+                'alpha_max': 15000.0,   # max rotor acceleration (RPM/s)
+                'j_max': 250000.0,      # max jerk (RPM/s^2)
             }
         self.p1 = ActuatorParam['p1']
         self.p2 = ActuatorParam['p2']
@@ -110,92 +111,33 @@ class S550ActuatorModel:
 
         return self.model
 
-    @staticmethod
-    def _smooth_clamp(x, lb, ub, k=0.05):
-        '''
-        Smooth clamp using tanh: differentiable approximation of clamp(x, lb, ub).
-        k controls sharpness (smaller = sharper).
-        '''
-        mid = 0.5 * (ub + lb)
-        half_range = 0.5 * (ub - lb)
-        return mid + half_range * cs.tanh((x - mid) / (half_range * k))
-
-    @staticmethod
-    def _stable_sigmoid(x):
-        '''
-        Numerically stable sigmoid using tanh (no exp overflow).
-        sigmoid(x) = 0.5 * (1 + tanh(x/2))
-        '''
-        return 0.5 * (1.0 + cs.tanh(x * 0.5))
-
-    @staticmethod
-    def _smooth_saturation_factor(alpha, alpha_max, j, k=0.05):
-        '''
-        Smooth saturation factor sigma in [0, 1].
-        sigma ~ 1 when |alpha| >= alpha_max AND alpha*j > 0 (would push further)
-        sigma ~ 0 otherwise.
-
-        Uses tanh-based sigmoid (no exp overflow).
-        k controls transition sharpness.
-        '''
-        # Condition 1: |alpha| >= alpha_max
-        scale_alpha = k * alpha_max * alpha_max
-        s1 = S550ActuatorModel._stable_sigmoid(
-            (alpha * alpha - alpha_max * alpha_max) / scale_alpha
-        )
-
-        # Condition 2: alpha * j > 0  (jerk pushes acceleration further)
-        scale_j = k * alpha_max * alpha_max
-        s2 = S550ActuatorModel._stable_sigmoid(
-            alpha * j / scale_j
-        )
-
-        return s1 * s2
+    def get_jerk_expr(self):
+        j_list = []
+        for i in range(6):
+            w_i = self.w_rot[i]
+            alpha_i = self.alpha_rot[i]
+            w_cmd_i = self.u[i]
+            # Physical Jerk
+            j_raw = -(self.p1 + self.p2 * w_i) * alpha_i + self.p3 * (w_cmd_i - w_i)
+            j_list.append(j_raw)
+        return cs.vertcat(*j_list)
 
     def _actuator_dynamics(self):
-        '''
-        2nd-order actuator dynamics with smooth saturation.
-
-        dw_rot/dt = alpha_eff
-        dalpha_rot/dt = j_eff
-
-        Smooth clamp replaces hard clamp/if_else for solver compatibility.
-        Returns (alpha_eff, j_eff) each of dim 6.
-        '''
-        alpha_eff_list = []
         j_eff_list = []
+        alpha_eff_list = []
 
         for i in range(6):
             w_i = self.w_rot[i]
             alpha_i = self.alpha_rot[i]
             w_cmd_i = self.u[i]
 
-            # Raw jerk: j = -(p1 + p2*w)*alpha + p3*(w_cmd - w)
-            j_raw = -(self.p1 + self.p2 * w_i) * alpha_i \
-                     + self.p3 * (w_cmd_i - w_i)
-
-            # Smooth clamp jerk to [-j_max, j_max]
-            j_clamped = self._smooth_clamp(j_raw, -self.j_max, self.j_max)
-
-            # Smooth saturation factor: sigma ~ 1 when saturated
-            sigma = self._smooth_saturation_factor(
-                alpha_i, self.alpha_max, j_clamped
-            )
-
-            # alpha_eff: blend between alpha_i and alpha_max * tanh(alpha_i / alpha_max)
-            alpha_saturated = self.alpha_max * cs.tanh(alpha_i / self.alpha_max)
-            alpha_eff_i = (1.0 - sigma) * alpha_i + sigma * alpha_saturated
-
-            # j_eff: blend between j_clamped and 0
-            j_eff_i = (1.0 - sigma) * j_clamped
+            # 1. Raw Jerk 계산
+            j_raw = (-(self.p1 + self.p2 * w_i) * alpha_i + self.p3 * (w_cmd_i - w_i))
+            alpha_eff_i = alpha_i  # dwdt = alpha
 
             alpha_eff_list.append(alpha_eff_i)
-            j_eff_list.append(j_eff_i)
-
-        alpha_eff = cs.vertcat(*alpha_eff_list)
-        j_eff = cs.vertcat(*j_eff_list)
-
-        return alpha_eff, j_eff
+            j_eff_list.append(j_raw)
+        return cs.vertcat(*alpha_eff_list), cs.vertcat(*j_eff_list)
 
     def _p_dynamics(self):
         return self.v

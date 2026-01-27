@@ -52,7 +52,7 @@ class S550ActuatorOcp:
             ])
             Q_w_rot = 0.0
             Q_alpha_rot = 0.0
-            R = np.diag([0.01] * 6)
+            R = np.diag([0.1] * 6)
         else:
             t_horizon = MpcParam['t_horizon']
             n_nodes = MpcParam['n_nodes']
@@ -60,6 +60,12 @@ class S550ActuatorOcp:
             Q_w_rot = MpcParam.get('Q_w_rot', 0.0)
             Q_alpha_rot = MpcParam.get('Q_alpha_rot', 0.0)
             R = MpcParam['RArray'][0] * np.eye(6)
+
+        if ActuatorParam is None:
+            print(f'Please provide actuator parameters')
+        else:
+            self.alpha_max = ActuatorParam['alpha_max']
+            self.j_max = ActuatorParam['j_max']
 
         # Build full 25x25 Q from rigid(13) + w_rot(6) + alpha_rot(6)
         Q = block_diag(Q_rigid,
@@ -124,52 +130,40 @@ class S550ActuatorOcp:
         self.ocp.constraints.ubu = np.array([self.w_rot_max] * nu)
         self.ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4, 5])
 
-        # Path constraints on w_rot (nonlinear constraint h)
-        # h(x,u) = [x[13], x[14], ..., x[18]]  (actual rotor speeds)
-        # w_rot_min <= h_i <= w_rot_max
-        model_x = acados_model.x
-        h_expr = model_x[13:19]
+        # Rotor acceleration constraint
+        self.ocp.constraints.idxbx = np.arange(19,25)
+        self.ocp.constraints.lbx = np.array([-self.alpha_max] * 6)
+        self.ocp.constraints.ubx = np.array([self.alpha_max] * 6)
 
-        self.ocp.model.con_h_expr = h_expr
-        self.ocp.constraints.lh = np.array([self.w_rot_min] * 6)
-        self.ocp.constraints.uh = np.array([self.w_rot_max] * 6)
+        # Jerk constraint
+        j_expr = model_obj.get_jerk_expr()
+        self.ocp.model.con_h_expr = j_expr
+        self.ocp.constraints.lh = np.array([-self.j_max] * 6)
+        self.ocp.constraints.uh = np.array([self.j_max] * 6)
 
         # L2 penalty weights for path constraints (slack)
         nh = 6
-        self.ocp.cost.zl = 100.0 * np.ones(nh)    # lower slack linear penalty
-        self.ocp.cost.zu = 100.0 * np.ones(nh)    # upper slack linear penalty
-        self.ocp.cost.Zl = 100.0 * np.ones(nh)    # lower slack quadratic penalty
-        self.ocp.cost.Zu = 100.0 * np.ones(nh)    # upper slack quadratic penalty
+        self.ocp.cost.zl = 1e3 * np.ones(nh)    # lower slack linear penalty
+        self.ocp.cost.zu = 1e3 * np.ones(nh)    # upper slack linear penalty
+        self.ocp.cost.Zl = 1e5 * np.ones(nh)    # lower slack quadratic penalty
+        self.ocp.cost.Zu = 1e5 * np.ones(nh)    # upper slack quadratic penalty
         self.ocp.constraints.lsh = np.zeros(nh)
         self.ocp.constraints.ush = np.zeros(nh)
         self.ocp.constraints.idxsh = np.arange(nh)
-
-        # Terminal path constraints
-        self.ocp.model.con_h_expr_e = h_expr
-        self.ocp.constraints.lh_e = np.array([self.w_rot_min] * 6)
-        self.ocp.constraints.uh_e = np.array([self.w_rot_max] * 6)
-
-        self.ocp.cost.zl_e = 100.0 * np.ones(nh)
-        self.ocp.cost.zu_e = 100.0 * np.ones(nh)
-        self.ocp.cost.Zl_e = 100.0 * np.ones(nh)
-        self.ocp.cost.Zu_e = 100.0 * np.ones(nh)
-        self.ocp.constraints.lsh_e = np.zeros(nh)
-        self.ocp.constraints.ush_e = np.zeros(nh)
-        self.ocp.constraints.idxsh_e = np.arange(nh)
 
         # ============================================================
         # 3. Solver options
         # ============================================================
         self.ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         self.ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
-        self.ocp.solver_options.levenberg_marquardt = 1e-1
+        self.ocp.solver_options.levenberg_marquardt = 1e-2
         self.ocp.solver_options.integrator_type = 'ERK'
         self.ocp.solver_options.sim_method_num_stages = 4    # RK4
-        self.ocp.solver_options.sim_method_num_steps = 4     # Multiple steps for fast actuator dynamics
+        self.ocp.solver_options.sim_method_num_steps = 5     # Multiple steps for fast actuator dynamics
         self.ocp.solver_options.print_level = 0
         self.ocp.solver_options.nlp_solver_type = 'SQP_RTI'
         self.ocp.solver_options.nlp_solver_max_iter = 100
-        self.ocp.solver_options.globalization = 'FIXED_STEP'
+        # self.ocp.solver_options.globalization = 'FIXED_STEP'
         self.ocp.solver_options.tf = t_horizon
         self.ocp.solver_options.N_horizon = n_nodes
 

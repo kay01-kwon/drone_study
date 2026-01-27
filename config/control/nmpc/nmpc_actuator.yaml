@@ -22,8 +22,8 @@ actuator_params:
   p1: 25.16687    # Damping coefficient
   p2: 0.003933    # Speed-dependent damping
   p3: 515.605     # Stiffness (bandwidth^2)
-  alpha_max: 15000  # Max rotor acceleration [rad/s^2]
-  j_max: 250000     # Max jerk [rad/s^3]
+  alpha_max: 15000  # Max rotor acceleration [RPM/s]
+  j_max: 250000     # Max jerk [RPM/s^2]
 
 nmpc_params:
   t_horizon: 1.0
@@ -34,6 +34,6 @@ nmpc_params:
             10.0, 10.0, 10.0, 10.0,        # qw, qx, qy, qz
             5.0, 5.0, 5.0 ]               # wx, wy, wz
   # Actuator state weights (single value, applied to all 6 rotors each)
-  Q_w_rot: 0.0        # w_rot weight (rotor speed tracking)
-  Q_alpha_rot: 0.0    # alpha_rot weight (rotor acceleration)
+  Q_w_rot: 1e-4        # w_rot weight (rotor speed tracking)
+  Q_alpha_rot: 1e-5    # alpha_rot weight (rotor acceleration)
   RArray: [ 0.1 ]     # w_cmd weight (applied to all 6)
