@@ -36,4 +36,4 @@ nmpc_params:
   # Actuator state weights (single value, applied to all 6 rotors each)
   Q_w_rot: 1e-4        # w_rot weight (rotor speed tracking)
   Q_alpha_rot: 1e-5    # alpha_rot weight (rotor acceleration)
-  RArray: [ 1e-5 ]    # w_cmd weight (applied to all 6, scaled for RPM inputs)
+  RArray: [ 3e-7 ]    # w_cmd weight (equivalent to R=0.1 for thrust-scale inputs)
