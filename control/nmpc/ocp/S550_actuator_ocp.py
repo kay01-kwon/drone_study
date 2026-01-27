@@ -255,24 +255,20 @@ class S550ActuatorOcp:
 
         N = self.ocp.solver_options.N_horizon
 
+        # Warm start: shift previous x trajectory forward as initial guesses
         if self.previous_states is not None:
             for stage in range(N):
-                self.ocp_solver.set(stage, 'p', params)
                 if stage < N - 1:
-                    prev_state = self.previous_states[stage + 1]
-                    y_ref_warm = np.concatenate((prev_state, u_prev))
-                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
+                    self.ocp_solver.set(stage, 'x', self.previous_states[stage + 1])
                 else:
-                    y_ref_warm = np.concatenate((self.ref_nmpc, u_prev))
-                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
-            self.ocp_solver.set(N, 'p', params)
-            self.ocp_solver.set(N, 'y_ref', self.ref_nmpc)
-        else:
-            for stage in range(N):
-                self.ocp_solver.set(stage, 'y_ref', y_ref)
-                self.ocp_solver.set(stage, 'p', params)
-            self.ocp_solver.set(N, 'y_ref', y_ref_N)
-            self.ocp_solver.set(N, 'p', params)
+                    self.ocp_solver.set(stage, 'x', self.previous_states[N])
+
+        # Set references and parameters for all stages
+        for stage in range(N):
+            self.ocp_solver.set(stage, 'y_ref', y_ref)
+            self.ocp_solver.set(stage, 'p', params)
+        self.ocp_solver.set(N, 'y_ref', y_ref_N)
+        self.ocp_solver.set(N, 'p', params)
 
         status = self.ocp_solver.solve()
 
@@ -316,71 +312,43 @@ class S550ActuatorOcp:
         self.ocp_solver.set(0, 'lbx', state_transformed)
         self.ocp_solver.set(0, 'ubx', state_transformed)
 
-        # Warm start: shift previous trajectory forward
+        # Warm start: shift previous x/u trajectory forward as initial guesses
         if self.previous_states is not None:
             for stage in range(N):
-                self.ocp_solver.set(stage, 'p', params)
-
-                t_ref = t_curr + stage * dt
-                ref = get_reference(t_ref)
-
-                ref_nmpc = np.zeros(self.nx)
-                ref_nmpc[0:6] = ref[0:6]
-                ref_nmpc[6] = np.cos(ref[6] / 2.0)
-                ref_nmpc[9] = np.sin(ref[6] / 2.0)
-                ref_nmpc[12] = ref[7]
-                ref_nmpc[13:19] = self.w_hover
-
                 if stage < N - 1:
-                    prev_state = self.previous_states[stage + 1]
-                    y_ref_warm = np.concatenate((prev_state, u_prev))
-                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
+                    self.ocp_solver.set(stage, 'x', self.previous_states[stage + 1])
                 else:
-                    y_ref_warm = np.concatenate((ref_nmpc, u_prev))
-                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
+                    self.ocp_solver.set(stage, 'x', self.previous_states[N])
 
-            # Terminal
-            t_ref_N = t_curr + T
-            ref_N = get_reference(t_ref_N)
-            ref_nmpc_N = np.zeros(self.nx)
-            ref_nmpc_N[0:6] = ref_N[0:6]
-            ref_nmpc_N[6] = np.cos(ref_N[6] / 2.0)
-            ref_nmpc_N[9] = np.sin(ref_N[6] / 2.0)
-            ref_nmpc_N[12] = ref_N[7]
-            ref_nmpc_N[13:19] = self.w_hover
+        # Set references and parameters for all stages
+        for stage in range(N):
+            self.ocp_solver.set(stage, 'p', params)
 
-            self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
-            self.ocp_solver.set(N, 'p', params)
-        else:
-            # First solve: use constant reference
-            for stage in range(N):
-                self.ocp_solver.set(stage, 'p', params)
+            t_ref = t_curr + stage * dt
+            ref = get_reference(t_ref)
 
-                t_ref = t_curr + stage * dt
-                ref = get_reference(t_ref)
+            ref_nmpc = np.zeros(self.nx)
+            ref_nmpc[0:6] = ref[0:6]
+            ref_nmpc[6] = np.cos(ref[6] / 2.0)
+            ref_nmpc[9] = np.sin(ref[6] / 2.0)
+            ref_nmpc[12] = ref[7]
+            ref_nmpc[13:19] = self.w_hover
 
-                ref_nmpc = np.zeros(self.nx)
-                ref_nmpc[0:6] = ref[0:6]
-                ref_nmpc[6] = np.cos(ref[6] / 2.0)
-                ref_nmpc[9] = np.sin(ref[6] / 2.0)
-                ref_nmpc[12] = ref[7]
-                ref_nmpc[13:19] = self.w_hover
+            y_ref = np.concatenate((ref_nmpc, u_prev))
+            self.ocp_solver.set(stage, 'y_ref', y_ref)
 
-                y_ref = np.concatenate((ref_nmpc, u_prev))
-                self.ocp_solver.set(stage, 'y_ref', y_ref)
+        # Terminal reference
+        t_ref_N = t_curr + T
+        ref_N = get_reference(t_ref_N)
+        ref_nmpc_N = np.zeros(self.nx)
+        ref_nmpc_N[0:6] = ref_N[0:6]
+        ref_nmpc_N[6] = np.cos(ref_N[6] / 2.0)
+        ref_nmpc_N[9] = np.sin(ref_N[6] / 2.0)
+        ref_nmpc_N[12] = ref_N[7]
+        ref_nmpc_N[13:19] = self.w_hover
 
-            # Terminal reference
-            t_ref_N = t_curr + T
-            ref_N = get_reference(t_ref_N)
-            ref_nmpc_N = np.zeros(self.nx)
-            ref_nmpc_N[0:6] = ref_N[0:6]
-            ref_nmpc_N[6] = np.cos(ref_N[6] / 2.0)
-            ref_nmpc_N[9] = np.sin(ref_N[6] / 2.0)
-            ref_nmpc_N[12] = ref_N[7]
-            ref_nmpc_N[13:19] = self.w_hover
-
-            self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
-            self.ocp_solver.set(N, 'p', params)
+        self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
+        self.ocp_solver.set(N, 'p', params)
 
         status = self.ocp_solver.solve()
 
