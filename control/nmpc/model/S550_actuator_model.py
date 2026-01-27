@@ -9,7 +9,7 @@ class S550ParamModel:
         DroneParam: m, arm_length, motor_const, moment_const
         '''
 
-        self.model_name = 'S550_param_model'
+        self.model_name = 'S550_actuator_func'
         self.model = AcadosModel()
 
         # drone parameter
@@ -21,12 +21,14 @@ class S550ParamModel:
         self.k_m = DroneParam['moment_const']
 
         # State x (p, v, q, w) (dim: 13)
-        self.p = cs.MX.sym('p', 3)      # Position (World)
-        self.v = cs.MX.sym('v', 3)      # Velocity (World)
-        self.q = cs.MX.sym('q', 4)      # Quaternion (Body to World) qw, qx, qy, qz
-        self.w = cs.MX.sym('w', 3)      # Angular velocity (Body)
-        self.x = cs.vertcat(self.p, self.v, self.q, self.w)
-        self.x_dim = 13
+        self.p = cs.MX.sym('p', 3)                  # Position (World)
+        self.v = cs.MX.sym('v', 3)                  # Velocity (World)
+        self.q = cs.MX.sym('q', 4)                  # Quaternion (Body to World) qw, qx, qy, qz
+        self.w = cs.MX.sym('w', 3)                  # Angular velocity (Body)
+        self.w_rot = cs.MX.sym('w_rot', 6)          # Rotor speed (RPM)
+        self.alpha_rot = cs.MX.sym('alpha_rot', 6)  # Rotor acceleration (RPM/s)
+        self.x = cs.vertcat(self.p, self.v, self.q, self.w, self.w_rot, self.alpha_rot)
+        self.x_dim = 25
 
         # Desired rotor thrusts (dim: 6)
         self.u1 = cs.MX.sym('u1')
@@ -39,18 +41,22 @@ class S550ParamModel:
                             self.u4, self.u5, self.u6)
         self.u_dim = 6
 
-        #*********************************************
         # Pass parameter related to dm and com offset
         self.param = cs.MX.sym('p',3)
-        #*********************************************
 
         # The time derivative of state
         self.dpdt = cs.MX.sym('dpdt', 3)
         self.dvdt = cs.MX.sym('dvdt', 3)
         self.dqdt = cs.MX.sym('dqdt', 4)
         self.dwdt = cs.MX.sym('dwdt', 3)
-        self.xdot = cs.vertcat(self.dpdt, self.dvdt,
-                               self.dqdt, self.dwdt)
+        self.dw_rot_dt = cs.MX.sym('dw_rot_dt', 6)
+        self.dalpha_rot_dt = cs.MX.sym('dalpha_rot_dt', 6)
+        self.xdot = cs.vertcat(self.dpdt,
+                               self.dvdt,
+                               self.dqdt,
+                               self.dwdt,
+                               self.dw_rot_dt,
+                               self.dalpha_rot_dt)
 
     def export_acados_model(self) -> AcadosModel:
         '''
