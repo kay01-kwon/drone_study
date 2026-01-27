@@ -76,6 +76,8 @@ class S550ActuatorOcp:
         nx = acados_model.x.rows()   # 25
         nu = acados_model.u.rows()   # 6
         ny = nx + nu                 # 31
+        self.nx = nx
+        self.nu = nu
 
         # Parameter dimension
         self.n_params = acados_model.p.rows()
@@ -84,10 +86,13 @@ class S550ActuatorOcp:
         # Hover rotor speed: mg = 6 * C_T * w_hover^2
         self.w_hover = np.sqrt(m * 9.81 / (6.0 * self.C_T))
 
-        # Initial state
+        # Initial state (hover equilibrium)
         x0 = np.zeros(nx)
         x0[6] = 1.0                          # qw = 1
         x0[13:19] = self.w_hover              # w_rot at hover
+
+        # Hover control input
+        u_hover = np.ones(nu) * self.w_hover
 
         # ============================================================
         # 1. Cost setup (LINEAR_LS)
@@ -105,7 +110,8 @@ class S550ActuatorOcp:
         self.ocp.cost.W = block_diag(Q, R)
         self.ocp.cost.W_e = Q
 
-        self.ocp.cost.yref = np.concatenate((x0, np.zeros(nu)))
+        # Use hover equilibrium as initial reference (u_ref = w_hover, NOT 0)
+        self.ocp.cost.yref = np.concatenate((x0, u_hover))
         self.ocp.cost.yref_e = x0
 
         # ============================================================
@@ -175,6 +181,15 @@ class S550ActuatorOcp:
         AcadosOcpSolver.generate(self.ocp, json_file=self.solver_json)
         AcadosOcpSolver.build(self.ocp.code_export_directory, with_cython=True)
         self.ocp_solver = AcadosOcpSolver.create_cython_solver(self.solver_json)
+
+        # ============================================================
+        # 4. Initialize solver trajectory at hover equilibrium
+        # ============================================================
+        N = n_nodes
+        for stage in range(N):
+            self.ocp_solver.set(stage, 'x', x0)
+            self.ocp_solver.set(stage, 'u', u_hover)
+        self.ocp_solver.set(N, 'x', x0)
 
         self.previous_states = None
 
@@ -278,40 +293,79 @@ class S550ActuatorOcp:
 
         state_transformed = self.state_transform(state)
 
+        # Initial state constraint
         self.ocp_solver.set(0, 'lbx', state_transformed)
         self.ocp_solver.set(0, 'ubx', state_transformed)
 
-        for stage in range(N):
-            self.ocp_solver.set(stage, 'p', params)
+        # Warm start: shift previous trajectory forward
+        if self.previous_states is not None:
+            for stage in range(N):
+                self.ocp_solver.set(stage, 'p', params)
 
-            t_ref = t_curr + stage * dt
-            ref = get_reference(t_ref)
+                t_ref = t_curr + stage * dt
+                ref = get_reference(t_ref)
 
-            ref_nmpc = np.zeros(25)
-            ref_nmpc[0:6] = ref[0:6]
-            ref_nmpc[6] = np.cos(ref[6] / 2.0)
-            ref_nmpc[9] = np.sin(ref[6] / 2.0)
-            ref_nmpc[12] = ref[7]
-            ref_nmpc[13:19] = self.w_hover
+                ref_nmpc = np.zeros(self.nx)
+                ref_nmpc[0:6] = ref[0:6]
+                ref_nmpc[6] = np.cos(ref[6] / 2.0)
+                ref_nmpc[9] = np.sin(ref[6] / 2.0)
+                ref_nmpc[12] = ref[7]
+                ref_nmpc[13:19] = self.w_hover
 
-            y_ref = np.concatenate((ref_nmpc, u_prev))
-            self.ocp_solver.set(stage, 'y_ref', y_ref)
+                if stage < N - 1:
+                    prev_state = self.previous_states[stage + 1]
+                    y_ref_warm = np.concatenate((prev_state, u_prev))
+                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
+                else:
+                    y_ref_warm = np.concatenate((ref_nmpc, u_prev))
+                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
 
-        # Terminal reference
-        t_ref_N = t_curr + T
-        ref_N = get_reference(t_ref_N)
-        ref_nmpc_N = np.zeros(25)
-        ref_nmpc_N[0:6] = ref_N[0:6]
-        ref_nmpc_N[6] = np.cos(ref_N[6] / 2.0)
-        ref_nmpc_N[9] = np.sin(ref_N[6] / 2.0)
-        ref_nmpc_N[12] = ref_N[7]
-        ref_nmpc_N[13:19] = self.w_hover
+            # Terminal
+            t_ref_N = t_curr + T
+            ref_N = get_reference(t_ref_N)
+            ref_nmpc_N = np.zeros(self.nx)
+            ref_nmpc_N[0:6] = ref_N[0:6]
+            ref_nmpc_N[6] = np.cos(ref_N[6] / 2.0)
+            ref_nmpc_N[9] = np.sin(ref_N[6] / 2.0)
+            ref_nmpc_N[12] = ref_N[7]
+            ref_nmpc_N[13:19] = self.w_hover
 
-        self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
-        self.ocp_solver.set(N, 'p', params)
+            self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
+            self.ocp_solver.set(N, 'p', params)
+        else:
+            # First solve: use constant reference
+            for stage in range(N):
+                self.ocp_solver.set(stage, 'p', params)
+
+                t_ref = t_curr + stage * dt
+                ref = get_reference(t_ref)
+
+                ref_nmpc = np.zeros(self.nx)
+                ref_nmpc[0:6] = ref[0:6]
+                ref_nmpc[6] = np.cos(ref[6] / 2.0)
+                ref_nmpc[9] = np.sin(ref[6] / 2.0)
+                ref_nmpc[12] = ref[7]
+                ref_nmpc[13:19] = self.w_hover
+
+                y_ref = np.concatenate((ref_nmpc, u_prev))
+                self.ocp_solver.set(stage, 'y_ref', y_ref)
+
+            # Terminal reference
+            t_ref_N = t_curr + T
+            ref_N = get_reference(t_ref_N)
+            ref_nmpc_N = np.zeros(self.nx)
+            ref_nmpc_N[0:6] = ref_N[0:6]
+            ref_nmpc_N[6] = np.cos(ref_N[6] / 2.0)
+            ref_nmpc_N[9] = np.sin(ref_N[6] / 2.0)
+            ref_nmpc_N[12] = ref_N[7]
+            ref_nmpc_N[13:19] = self.w_hover
+
+            self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
+            self.ocp_solver.set(N, 'p', params)
 
         status = self.ocp_solver.solve()
 
+        # Store trajectory for warm start (next call)
         self.previous_states = []
         for stage in range(N + 1):
             x_stage = self.ocp_solver.get(stage, 'x')
@@ -324,7 +378,6 @@ class S550ActuatorOcp:
     def state_transform(self, state):
         """
         Transform linear velocity from body to world frame.
-        Handles both 13-dim (rigid body only) and 25-dim (with actuator) states.
         """
         q = state[6:10]
         R_B_W = quaternion_to_rotm(q)
