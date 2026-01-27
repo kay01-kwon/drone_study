@@ -279,14 +279,14 @@ def create_rotor_figure(t, w_rotor, alpha_rotor, title_str):
     for i in range(n_rotors):
         # Rotor speed
         axes_speed[i].plot(t, w_rotor[:, i], 'b-', linewidth=2)
-        axes_speed[i].set_ylabel(rf'$\omega_{i + 1}$ [rad/s]')
+        axes_speed[i].set_ylabel(rf'$\omega_{i + 1}$ [RPM]')
         axes_speed[i].set_xlabel('time [s]')
         axes_speed[i].set_title(f'Motor {i + 1}', fontsize=14)
         axes_speed[i].grid(True)
 
         # Rotor acceleration
         axes_accel[i].plot(t, alpha_rotor[:, i], 'r-', linewidth=2)
-        axes_accel[i].set_ylabel(rf'$\alpha_{i + 1}$ [rad/s$^2$]')
+        axes_accel[i].set_ylabel(rf'$\alpha_{i + 1}$ [RPM/s]')
         axes_accel[i].set_xlabel('time [s]')
         axes_accel[i].set_title(f'Motor {i + 1}', fontsize=14)
         axes_accel[i].grid(True)

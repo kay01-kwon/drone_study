@@ -102,8 +102,8 @@ class S550_Sim_Model:
 
         # Ground contact force (simple spring-damper)
         if z < 0.0:
-            K_ground = 5000.0  # N/m
-            D_ground = 200.0   # N*s/m
+            K_ground = 60000.0  # N/m
+            D_ground = 500.0   # N*s/m
             mu = 0.8           # Friction coefficient
 
             # Normal force
