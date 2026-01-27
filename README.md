@@ -162,3 +162,7 @@ The split config file structure provides:
 4. **Scalability**
    - Simple to add new control methods (add new file in `config/control/`)
    - Easy to add new DOB types (add new file in `config/estimator/dob/`)
+
+# To do list
+
+[ ] Control reallocation : minimize collective thrust and moment s.t. actuator model
