@@ -6,26 +6,22 @@ from control.nmpc.cs_utils import cs_math_tool
 class S550ActuatorModel:
     def __init__(self, DynParam, DroneParam, ActuatorParam=None):
         '''
-        S550 model with 2nd-order actuator dynamics and saturation.
+        S550 model with linear 2nd-order actuator dynamics.
+        Saturation is NOT modeled here — handled by path constraints in OCP.
 
         State: [p(3), v(3), q(4), w(3), w_rot(6), alpha_rot(6)] = 25 dim
         Input: [w_cmd(6)] = commanded rotor speeds
 
-        Actuator dynamics (per rotor):
-            dw_rot/dt   = alpha_rot_eff
-            dalpha/dt   = j_eff
+        Actuator dynamics (per rotor, linear):
+            dw_rot/dt   = alpha_rot
+            dalpha/dt   = -(p1 + p2*w_rot)*alpha_rot + p3*(w_cmd - w_rot)
 
-            j_raw = -(p1 + p2*w_rot)*alpha_rot + p3*(w_cmd - w_rot)
-            j_clamped = clamp(j_raw, -j_max, j_max)
-
-            Saturation logic:
-              if |alpha_rot| < alpha_max:
-                  alpha_eff = alpha_rot,  j_eff = j_clamped
-              if |alpha_rot| >= alpha_max and alpha_rot * j_clamped > 0:
-                  alpha_eff = alpha_max * sign(alpha_rot),  j_eff = 0
+        Constraints (enforced as path constraints in OCP, not here):
+            w_rot_min <= w_rot <= w_rot_max
+            -alpha_max <= alpha_rot <= alpha_max
 
         DroneParam: arm_length, motor_const, moment_const
-        ActuatorParam: p1, p2, p3, alpha_max, j_max, w_rot_min, w_rot_max
+        ActuatorParam: p1, p2, p3, alpha_max, j_max
         '''
 
         self.model_name = 'S550_actuator_func'
@@ -42,17 +38,15 @@ class S550ActuatorModel:
         if ActuatorParam is None:
             # Default setup
             ActuatorParam = {
-                'p1': 25.16687,
-                'p2': 0.003933,
-                'p3': 515.605,
-                'alpha_max': 15000.0,   # max rotor acceleration (RPM/s)
-                'j_max': 250000.0,      # max jerk (RPM/s^2)
+                'p1': 30.0,
+                'p2': 0.001,
+                'p3': 900.0,
+                'alpha_max': 15000.0,
+                'j_max': 300000.0,
             }
         self.p1 = ActuatorParam['p1']
         self.p2 = ActuatorParam['p2']
         self.p3 = ActuatorParam['p3']
-        self.alpha_max = ActuatorParam['alpha_max']
-        self.j_max = ActuatorParam['j_max']
 
         # State x: [p, v, q, w, w_rot, alpha_rot] (dim: 25)
         self.p_pos = cs.MX.sym('p', 3)                 # Position (World)
@@ -85,18 +79,18 @@ class S550ActuatorModel:
 
     def export_acados_model(self) -> AcadosModel:
         '''
-        Export acados model with actuator dynamics including saturation.
+        Export acados model with linear actuator dynamics.
         '''
-        # Actuator dynamics with saturation
-        alpha_eff, j_eff = self._actuator_dynamics()
+        # Linear actuator dynamics (no saturation)
+        dw_rot, dalpha_rot = self._actuator_dynamics()
 
         f_expl = cs.vertcat(
             self._p_dynamics(),
             self._v_dynamics(),
             self._q_dynamics(),
             self._w_dynamics(),
-            alpha_eff,
-            j_eff
+            dw_rot,
+            dalpha_rot
         )
 
         f_impl = self.xdot - f_expl
@@ -111,33 +105,32 @@ class S550ActuatorModel:
 
         return self.model
 
-    def get_jerk_expr(self):
-        j_list = []
-        for i in range(6):
-            w_i = self.w_rot[i]
-            alpha_i = self.alpha_rot[i]
-            w_cmd_i = self.u[i]
-            # Physical Jerk
-            j_raw = -(self.p1 + self.p2 * w_i) * alpha_i + self.p3 * (w_cmd_i - w_i)
-            j_list.append(j_raw)
-        return cs.vertcat(*j_list)
-
     def _actuator_dynamics(self):
-        j_eff_list = []
-        alpha_eff_list = []
+        '''
+        Linear 2nd-order actuator dynamics.
+
+        dw_rot/dt = alpha_rot
+        dalpha_rot/dt = -(p1 + p2*w_rot)*alpha_rot + p3*(w_cmd - w_rot)
+
+        Returns (dw_rot, dalpha_rot) each of dim 6.
+        '''
+        jerk_list = []
 
         for i in range(6):
             w_i = self.w_rot[i]
             alpha_i = self.alpha_rot[i]
             w_cmd_i = self.u[i]
 
-            # 1. Raw Jerk 계산
-            j_raw = (-(self.p1 + self.p2 * w_i) * alpha_i + self.p3 * (w_cmd_i - w_i))
-            alpha_eff_i = alpha_i  # dwdt = alpha
+            # Linear jerk (no clamp, no saturation)
+            j_i = -(self.p1 + self.p2 * w_i) * alpha_i \
+                   + self.p3 * (w_cmd_i - w_i)
 
-            alpha_eff_list.append(alpha_eff_i)
-            j_eff_list.append(j_raw)
-        return cs.vertcat(*alpha_eff_list), cs.vertcat(*j_eff_list)
+            jerk_list.append(j_i)
+
+        dw_rot = self.alpha_rot           # dw/dt = alpha
+        dalpha_rot = cs.vertcat(*jerk_list)  # dalpha/dt = jerk
+
+        return dw_rot, dalpha_rot
 
     def _p_dynamics(self):
         return self.v
