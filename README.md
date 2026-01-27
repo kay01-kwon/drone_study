@@ -165,4 +165,4 @@ The split config file structure provides:
 
 # To do list
 
-[ ] Control reallocation : minimize collective thrust and moment s.t. actuator model
+- [ ] Control reallocation : minimize collective thrust and moment s.t. actuator model
