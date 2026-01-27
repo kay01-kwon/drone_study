@@ -36,6 +36,7 @@ class S550ActuatorModel:
 
         # Actuator parameters (2nd order model)
         if ActuatorParam is None:
+            # Default setup
             ActuatorParam = {
                 'p1': 30.0,
                 'p2': 0.001,

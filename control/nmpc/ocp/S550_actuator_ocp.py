@@ -58,7 +58,7 @@ class S550ActuatorOcp:
             ])
             Q_w_rot = 0.0
             Q_alpha_rot = 0.0
-            R = np.diag([0.01] * 6)
+            R = np.diag([0.1] * 6)
         else:
             t_horizon = MpcParam['t_horizon']
             n_nodes = MpcParam['n_nodes']
@@ -66,6 +66,12 @@ class S550ActuatorOcp:
             Q_w_rot = MpcParam.get('Q_w_rot', 0.0)
             Q_alpha_rot = MpcParam.get('Q_alpha_rot', 0.0)
             R = MpcParam['RArray'][0] * np.eye(6)
+
+        if ActuatorParam is None:
+            print(f'Please provide actuator parameters')
+        else:
+            self.alpha_max = ActuatorParam['alpha_max']
+            self.j_max = ActuatorParam['j_max']
 
         # Build full 25x25 Q from rigid(13) + w_rot(6) + alpha_rot(6)
         Q = block_diag(Q_rigid,
@@ -175,14 +181,14 @@ class S550ActuatorOcp:
         # ============================================================
         self.ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
         self.ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
-        self.ocp.solver_options.levenberg_marquardt = 1e-1
+        self.ocp.solver_options.levenberg_marquardt = 1e-2
         self.ocp.solver_options.integrator_type = 'ERK'
         self.ocp.solver_options.sim_method_num_stages = 4    # RK4
-        self.ocp.solver_options.sim_method_num_steps = 4     # Multiple steps for fast actuator dynamics
+        self.ocp.solver_options.sim_method_num_steps = 5     # Multiple steps for fast actuator dynamics
         self.ocp.solver_options.print_level = 0
         self.ocp.solver_options.nlp_solver_type = 'SQP_RTI'
         self.ocp.solver_options.nlp_solver_max_iter = 100
-        self.ocp.solver_options.globalization = 'FIXED_STEP'
+        # self.ocp.solver_options.globalization = 'FIXED_STEP'
         self.ocp.solver_options.tf = t_horizon
         self.ocp.solver_options.N_horizon = n_nodes
 
