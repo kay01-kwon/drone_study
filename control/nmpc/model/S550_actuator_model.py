@@ -121,22 +121,34 @@ class S550ActuatorModel:
         return mid + half_range * cs.tanh((x - mid) / (half_range * k))
 
     @staticmethod
-    def _smooth_saturation_factor(alpha, alpha_max, j, k=0.01):
+    def _stable_sigmoid(x):
+        '''
+        Numerically stable sigmoid using tanh (no exp overflow).
+        sigmoid(x) = 0.5 * (1 + tanh(x/2))
+        '''
+        return 0.5 * (1.0 + cs.tanh(x * 0.5))
+
+    @staticmethod
+    def _smooth_saturation_factor(alpha, alpha_max, j, k=0.05):
         '''
         Smooth saturation factor sigma in [0, 1].
         sigma ~ 1 when |alpha| >= alpha_max AND alpha*j > 0 (would push further)
         sigma ~ 0 otherwise.
 
-        Uses sigmoid-based smooth approximation for both conditions.
+        Uses tanh-based sigmoid (no exp overflow).
         k controls transition sharpness.
         '''
-        # Condition 1: |alpha| >= alpha_max  →  sigmoid((alpha^2 - alpha_max^2) / scale)
+        # Condition 1: |alpha| >= alpha_max
         scale_alpha = k * alpha_max * alpha_max
-        s1 = 1.0 / (1.0 + cs.exp(-(alpha * alpha - alpha_max * alpha_max) / scale_alpha))
+        s1 = S550ActuatorModel._stable_sigmoid(
+            (alpha * alpha - alpha_max * alpha_max) / scale_alpha
+        )
 
-        # Condition 2: alpha * j > 0  →  sigmoid(alpha * j / scale)
-        scale_j = k * alpha_max
-        s2 = 1.0 / (1.0 + cs.exp(-alpha * j / scale_j))
+        # Condition 2: alpha * j > 0  (jerk pushes acceleration further)
+        scale_j = k * alpha_max * alpha_max
+        s2 = S550ActuatorModel._stable_sigmoid(
+            alpha * j / scale_j
+        )
 
         return s1 * s2
 
