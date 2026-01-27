@@ -63,6 +63,11 @@ def get_nmpc_params(config):
         'QArray': config['nmpc_params']['QArray'],
         'RArray': config['nmpc_params']['RArray'],
     }
+    # Optional actuator state weights (single scalar each)
+    if 'Q_w_rot' in config['nmpc_params']:
+        nmpc_params['Q_w_rot'] = config['nmpc_params']['Q_w_rot']
+    if 'Q_alpha_rot' in config['nmpc_params']:
+        nmpc_params['Q_alpha_rot'] = config['nmpc_params']['Q_alpha_rot']
     return nmpc_params
 
 def get_actuator_params(config):
