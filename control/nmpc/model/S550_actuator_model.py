@@ -110,13 +110,44 @@ class S550ActuatorModel:
 
         return self.model
 
+    @staticmethod
+    def _smooth_clamp(x, lb, ub, k=0.05):
+        '''
+        Smooth clamp using tanh: differentiable approximation of clamp(x, lb, ub).
+        k controls sharpness (smaller = sharper).
+        '''
+        mid = 0.5 * (ub + lb)
+        half_range = 0.5 * (ub - lb)
+        return mid + half_range * cs.tanh((x - mid) / (half_range * k))
+
+    @staticmethod
+    def _smooth_saturation_factor(alpha, alpha_max, j, k=0.01):
+        '''
+        Smooth saturation factor sigma in [0, 1].
+        sigma ~ 1 when |alpha| >= alpha_max AND alpha*j > 0 (would push further)
+        sigma ~ 0 otherwise.
+
+        Uses sigmoid-based smooth approximation for both conditions.
+        k controls transition sharpness.
+        '''
+        # Condition 1: |alpha| >= alpha_max  →  sigmoid((alpha^2 - alpha_max^2) / scale)
+        scale_alpha = k * alpha_max * alpha_max
+        s1 = 1.0 / (1.0 + cs.exp(-(alpha * alpha - alpha_max * alpha_max) / scale_alpha))
+
+        # Condition 2: alpha * j > 0  →  sigmoid(alpha * j / scale)
+        scale_j = k * alpha_max
+        s2 = 1.0 / (1.0 + cs.exp(-alpha * j / scale_j))
+
+        return s1 * s2
+
     def _actuator_dynamics(self):
         '''
-        2nd-order actuator dynamics with acceleration and jerk saturation.
+        2nd-order actuator dynamics with smooth saturation.
 
         dw_rot/dt = alpha_eff
         dalpha_rot/dt = j_eff
 
+        Smooth clamp replaces hard clamp/if_else for solver compatibility.
         Returns (alpha_eff, j_eff) each of dim 6.
         '''
         alpha_eff_list = []
@@ -131,29 +162,20 @@ class S550ActuatorModel:
             j_raw = -(self.p1 + self.p2 * w_i) * alpha_i \
                      + self.p3 * (w_cmd_i - w_i)
 
-            # Clamp jerk to [-j_max, j_max]
-            j_clamped = cs.fmin(cs.fmax(j_raw, -self.j_max), self.j_max)
+            # Smooth clamp jerk to [-j_max, j_max]
+            j_clamped = self._smooth_clamp(j_raw, -self.j_max, self.j_max)
 
-            # Saturation condition: |alpha| >= alpha_max AND alpha*j > 0
-            # (acceleration is at limit and jerk would push it further)
-            is_saturated = cs.logic_and(
-                alpha_i * alpha_i >= self.alpha_max * self.alpha_max,
-                alpha_i * j_clamped > 0
+            # Smooth saturation factor: sigma ~ 1 when saturated
+            sigma = self._smooth_saturation_factor(
+                alpha_i, self.alpha_max, j_clamped
             )
 
-            # Effective acceleration: saturated -> clamp to alpha_max * sign
-            alpha_eff_i = cs.if_else(
-                is_saturated,
-                self.alpha_max * cs.sign(alpha_i),
-                alpha_i
-            )
+            # alpha_eff: blend between alpha_i and alpha_max * tanh(alpha_i / alpha_max)
+            alpha_saturated = self.alpha_max * cs.tanh(alpha_i / self.alpha_max)
+            alpha_eff_i = (1.0 - sigma) * alpha_i + sigma * alpha_saturated
 
-            # Effective jerk: saturated -> 0
-            j_eff_i = cs.if_else(
-                is_saturated,
-                0.0,
-                j_clamped
-            )
+            # j_eff: blend between j_clamped and 0
+            j_eff_i = (1.0 - sigma) * j_clamped
 
             alpha_eff_list.append(alpha_eff_i)
             j_eff_list.append(j_eff_i)
