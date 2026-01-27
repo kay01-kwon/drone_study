@@ -41,6 +41,12 @@ class S550ActuatorOcp:
         self.w_rot_max = 7300.0   # rad/s
         self.w_rot_min = 2000.0   # rad/s
 
+        # Rotor acceleration limit
+        if ActuatorParam is not None:
+            self.alpha_rot_max = ActuatorParam['alpha_max']
+        else:
+            self.alpha_rot_max = 15000.0
+
         if MpcParam is None:
             t_horizon = 0.20
             n_nodes = 20
@@ -124,30 +130,37 @@ class S550ActuatorOcp:
         self.ocp.constraints.ubu = np.array([self.w_rot_max] * nu)
         self.ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4, 5])
 
-        # Path constraints on w_rot (nonlinear constraint h)
-        # h(x,u) = [x[13], x[14], ..., x[18]]  (actual rotor speeds)
-        # w_rot_min <= h_i <= w_rot_max
+        # Path constraints: h(x,u) = [w_rot(6), alpha_rot(6)]
+        # w_rot_min  <= w_rot_i  <= w_rot_max
+        # -alpha_max <= alpha_i  <= alpha_max
         model_x = acados_model.x
-        h_expr = model_x[13:19]
+        h_expr = cs.vertcat(model_x[13:19], model_x[19:25])
 
         self.ocp.model.con_h_expr = h_expr
-        self.ocp.constraints.lh = np.array([self.w_rot_min] * 6)
-        self.ocp.constraints.uh = np.array([self.w_rot_max] * 6)
 
-        # L2 penalty weights for path constraints (slack)
-        nh = 6
-        self.ocp.cost.zl = 100.0 * np.ones(nh)    # lower slack linear penalty
-        self.ocp.cost.zu = 100.0 * np.ones(nh)    # upper slack linear penalty
-        self.ocp.cost.Zl = 100.0 * np.ones(nh)    # lower slack quadratic penalty
-        self.ocp.cost.Zu = 100.0 * np.ones(nh)    # upper slack quadratic penalty
+        nh = 12  # 6 w_rot + 6 alpha_rot
+        self.ocp.constraints.lh = np.concatenate([
+            np.array([self.w_rot_min] * 6),
+            np.array([-self.alpha_rot_max] * 6)
+        ])
+        self.ocp.constraints.uh = np.concatenate([
+            np.array([self.w_rot_max] * 6),
+            np.array([self.alpha_rot_max] * 6)
+        ])
+
+        # Soft constraint slack penalties (L1 + L2)
+        self.ocp.cost.zl = 100.0 * np.ones(nh)
+        self.ocp.cost.zu = 100.0 * np.ones(nh)
+        self.ocp.cost.Zl = 100.0 * np.ones(nh)
+        self.ocp.cost.Zu = 100.0 * np.ones(nh)
         self.ocp.constraints.lsh = np.zeros(nh)
         self.ocp.constraints.ush = np.zeros(nh)
         self.ocp.constraints.idxsh = np.arange(nh)
 
-        # Terminal path constraints
+        # Terminal path constraints (same)
         self.ocp.model.con_h_expr_e = h_expr
-        self.ocp.constraints.lh_e = np.array([self.w_rot_min] * 6)
-        self.ocp.constraints.uh_e = np.array([self.w_rot_max] * 6)
+        self.ocp.constraints.lh_e = self.ocp.constraints.lh.copy()
+        self.ocp.constraints.uh_e = self.ocp.constraints.uh.copy()
 
         self.ocp.cost.zl_e = 100.0 * np.ones(nh)
         self.ocp.cost.zu_e = 100.0 * np.ones(nh)
