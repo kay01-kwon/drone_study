@@ -1,0 +1,301 @@
+from acados_template import AcadosOcp, AcadosOcpSolver
+from control.nmpc.model.S550_actuator_model import S550ActuatorModel
+from utils.math_tool import quaternion_to_rotm
+from scipy.linalg import block_diag
+import numpy as np
+
+
+class S550ActuatorOcp:
+    def __init__(self, DynParam=None, DroneParam=None,
+                 MpcParam=None, ActuatorParam=None):
+        '''
+        NMPC with 2nd-order actuator dynamics and saturation.
+
+        State dim: 25 = [p(3), v(3), q(4), w(3), w_rot(6), alpha_rot(6)]
+        Control dim: 6 = [w_cmd_1 ... w_cmd_6] (commanded rotor speeds)
+
+        :param DynParam: m, MoiArray (Jxx, Jyy, Jzz)
+        :param DroneParam: arm_length, motor_const, moment_const
+        :param MpcParam: t_horizon, n_nodes, QArray, RArray
+        :param ActuatorParam: p1, p2, p3, alpha_max, j_max
+        '''
+        if DynParam is None:
+            m = 2.9
+            J = np.array([0.06, 0.06, 0.08])
+            DynParam = {'m': m, 'MoiArray': J}
+        else:
+            m = DynParam['m']
+
+        if DroneParam is None:
+            l = 0.265
+            C_T = 1.465e-7
+            k_m = 0.01569
+            DroneParam = {'arm_length': l,
+                          'motor_const': C_T,
+                          'moment_const': k_m}
+
+        self.C_T = DroneParam['motor_const']
+
+        # Rotor speed limits
+        self.w_rot_max = 7300.0   # rad/s
+        self.w_rot_min = 2000.0   # rad/s
+
+        if MpcParam is None:
+            t_horizon = 0.20
+            n_nodes = 20
+            # Cost weights for 25-state model
+            Q = np.diag([
+                1.0, 1.0, 1.0,              # px, py, pz
+                0.5, 0.5, 0.5,              # vx, vy, vz
+                0.5, 0.5, 0.5, 0.5,         # qw, qx, qy, qz
+                0.05, 0.05, 0.05,           # wx, wy, wz
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # w_rot (no tracking cost)
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # alpha_rot (no tracking cost)
+            ])
+            R = np.diag([0.01] * 6)          # u_cmd
+        else:
+            t_horizon = MpcParam['t_horizon']
+            n_nodes = MpcParam['n_nodes']
+            Q = np.diag(MpcParam['QArray'])
+            R = MpcParam['RArray'][0] * np.eye(6)
+
+        self.ocp = AcadosOcp()
+
+        # Build model
+        model_obj = S550ActuatorModel(DynParam, DroneParam, ActuatorParam)
+        acados_model = model_obj.export_acados_model()
+        self.ocp.model = acados_model
+
+        nx = acados_model.x.rows()   # 25
+        nu = acados_model.u.rows()   # 6
+        ny = nx + nu                 # 31
+
+        # Parameter dimension
+        self.n_params = acados_model.p.rows()
+        self.p_default = np.array([m, 0.0, 0.0])
+
+        # Hover rotor speed: mg = 6 * C_T * w_hover^2
+        self.w_hover = np.sqrt(m * 9.81 / (6.0 * self.C_T))
+
+        # Initial state
+        x0 = np.zeros(nx)
+        x0[6] = 1.0                          # qw = 1
+        x0[13:19] = self.w_hover              # w_rot at hover
+        # alpha_rot = 0 (already zero)
+
+        # 1. Cost setup (LINEAR_LS)
+        self.ocp.cost.cost_type = 'LINEAR_LS'
+        self.ocp.cost.cost_type_e = 'LINEAR_LS'
+
+        self.ocp.cost.Vx = np.zeros((ny, nx))
+        self.ocp.cost.Vx[:nx, :nx] = np.eye(nx)
+        self.ocp.cost.Vx_e = np.eye(nx)
+
+        self.ocp.cost.Vu = np.zeros((ny, nu))
+        self.ocp.cost.Vu[-nu:, -nu:] = np.eye(nu)
+
+        self.ocp.cost.W = block_diag(Q, R)
+        self.ocp.cost.W_e = Q
+
+        self.ocp.cost.yref = np.concatenate((x0, np.zeros(nu)))
+        self.ocp.cost.yref_e = x0
+
+        # 2. Constraints
+        self.ocp.constraints.x0 = x0
+
+        # Control input bounds (commanded rotor speed)
+        self.ocp.constraints.lbu = np.array([self.w_rot_min] * nu)
+        self.ocp.constraints.ubu = np.array([self.w_rot_max] * nu)
+        self.ocp.constraints.idxbu = np.array([0, 1, 2, 3, 4, 5])
+
+        # State bounds on w_rot (actual rotor speed)
+        # indices 13..18 in the 25-dim state
+        self.ocp.constraints.lbx = np.array([self.w_rot_min] * 6)
+        self.ocp.constraints.ubx = np.array([self.w_rot_max] * 6)
+        self.ocp.constraints.idxbx = np.array([13, 14, 15, 16, 17, 18])
+
+        # 3. Solver options
+        self.ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
+        self.ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
+        self.ocp.solver_options.levenberg_marquardt = 1e-2
+        self.ocp.solver_options.integrator_type = 'ERK'
+        self.ocp.solver_options.sim_method_num_stages = 4    # RK4
+        self.ocp.solver_options.sim_method_num_steps = 1
+        self.ocp.solver_options.print_level = 0
+        self.ocp.solver_options.nlp_solver_type = 'SQP_RTI'
+        self.ocp.solver_options.nlp_solver_max_iter = 100
+        self.ocp.solver_options.globalization = 'MERIT_BACKTRACKING'
+        self.ocp.solver_options.regularize_method = 'PROJECT'
+        self.ocp.solver_options.tf = t_horizon
+        self.ocp.solver_options.N_horizon = n_nodes
+
+        # Set initial parameter values
+        self.ocp.parameter_values = self.p_default
+
+        # Build solver
+        self.solver_json = 'acados_ocp_' + self.ocp.model.name + '.json'
+        AcadosOcpSolver.generate(self.ocp, json_file=self.solver_json)
+        AcadosOcpSolver.build(self.ocp.code_export_directory, with_cython=True)
+        self.ocp_solver = AcadosOcpSolver.create_cython_solver(self.solver_json)
+
+        self.previous_states = None
+
+        # Reference for the rigid-body part (13 dim)
+        self.ref_nmpc = np.zeros(nx)
+        self.ref_nmpc[6] = 1.0                # qw = 1
+        self.ref_nmpc[13:19] = self.w_hover    # w_rot hover reference
+
+        print(f"S550ActuatorOcp created (nx={nx}, nu={nu}, params={self.n_params})")
+
+    def solve(self, state, ref, param_est=None, u_prev=None):
+        '''
+        Solve OCP.
+        :param state: [p(3), v_body(3), q(4), w(3), w_rot(6), alpha_rot(6)]
+        :param ref: [px, py, pz, vx, vy, vz, yaw_des, dot_yaw_des]
+        :param param_est: [m_est, rx, ry]
+        :param u_prev: previous commanded rotor speeds (6,)
+        :return: (status, w_cmd)
+        '''
+        if u_prev is None:
+            u_prev = np.ones(6) * self.w_hover
+
+        if param_est is None:
+            params = self.p_default
+        else:
+            params = param_est
+
+        # Build reference
+        self.ref_nmpc[0:6] = ref[0:6]
+        self.ref_nmpc[6] = np.cos(ref[6] / 2.0)
+        self.ref_nmpc[9] = np.sin(ref[6] / 2.0)
+        self.ref_nmpc[12] = ref[7]
+        self.ref_nmpc[13:19] = self.w_hover
+
+        y_ref = np.concatenate((self.ref_nmpc, u_prev))
+        y_ref_N = self.ref_nmpc
+
+        # Transform body velocity to world
+        state_transformed = self.state_transform(state)
+
+        # Initial state constraint
+        self.ocp_solver.set(0, 'lbx', state_transformed)
+        self.ocp_solver.set(0, 'ubx', state_transformed)
+
+        N = self.ocp.solver_options.N_horizon
+
+        if self.previous_states is not None:
+            for stage in range(N):
+                self.ocp_solver.set(stage, 'p', params)
+                if stage < N - 1:
+                    prev_state = self.previous_states[stage + 1]
+                    y_ref_warm = np.concatenate((prev_state, u_prev))
+                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
+                else:
+                    y_ref_warm = np.concatenate((self.ref_nmpc, u_prev))
+                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
+            self.ocp_solver.set(N, 'p', params)
+            self.ocp_solver.set(N, 'y_ref', self.ref_nmpc)
+        else:
+            for stage in range(N):
+                self.ocp_solver.set(stage, 'y_ref', y_ref)
+                self.ocp_solver.set(stage, 'p', params)
+            self.ocp_solver.set(N, 'y_ref', y_ref_N)
+            self.ocp_solver.set(N, 'p', params)
+
+        status = self.ocp_solver.solve()
+
+        # Store trajectory for warm start
+        self.previous_states = []
+        for stage in range(N + 1):
+            x_stage = self.ocp_solver.get(stage, 'x')
+            self.previous_states.append(x_stage.copy())
+
+        # Return commanded rotor speed (control input)
+        w_cmd = self.ocp_solver.get(0, 'u')
+
+        return status, w_cmd
+
+    def solve_for_trajectory(self, state, t_curr, param_est=None, u_prev=None):
+        '''
+        Solve OCP with trajectory tracking along prediction horizon.
+        :param state: full 25-dim state
+        :param t_curr: current time
+        :param param_est: [m_est, rx, ry]
+        :param u_prev: previous commanded rotor speeds (6,)
+        :return: (status, w_cmd)
+        '''
+        from ref_generation.ref_generator import get_reference
+
+        if u_prev is None:
+            u_prev = np.ones(6) * self.w_hover
+
+        if param_est is None:
+            params = self.p_default
+        else:
+            params = param_est
+
+        N = self.ocp.solver_options.N_horizon
+        T = self.ocp.solver_options.tf
+        dt = T / N
+        nx = self.x_dim if hasattr(self, 'x_dim') else 25
+
+        state_transformed = self.state_transform(state)
+
+        self.ocp_solver.set(0, 'lbx', state_transformed)
+        self.ocp_solver.set(0, 'ubx', state_transformed)
+
+        for stage in range(N):
+            self.ocp_solver.set(stage, 'p', params)
+
+            t_ref = t_curr + stage * dt
+            ref = get_reference(t_ref)
+
+            ref_nmpc = np.zeros(25)
+            ref_nmpc[0:6] = ref[0:6]
+            ref_nmpc[6] = np.cos(ref[6] / 2.0)
+            ref_nmpc[9] = np.sin(ref[6] / 2.0)
+            ref_nmpc[12] = ref[7]
+            ref_nmpc[13:19] = self.w_hover
+
+            y_ref = np.concatenate((ref_nmpc, u_prev))
+            self.ocp_solver.set(stage, 'y_ref', y_ref)
+
+        # Terminal reference
+        t_ref_N = t_curr + T
+        ref_N = get_reference(t_ref_N)
+        ref_nmpc_N = np.zeros(25)
+        ref_nmpc_N[0:6] = ref_N[0:6]
+        ref_nmpc_N[6] = np.cos(ref_N[6] / 2.0)
+        ref_nmpc_N[9] = np.sin(ref_N[6] / 2.0)
+        ref_nmpc_N[12] = ref_N[7]
+        ref_nmpc_N[13:19] = self.w_hover
+
+        self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
+        self.ocp_solver.set(N, 'p', params)
+
+        status = self.ocp_solver.solve()
+
+        self.previous_states = []
+        for stage in range(N + 1):
+            x_stage = self.ocp_solver.get(stage, 'x')
+            self.previous_states.append(x_stage.copy())
+
+        w_cmd = self.ocp_solver.get(0, 'u')
+
+        return status, w_cmd
+
+    def state_transform(self, state):
+        """
+        Transform linear velocity from body to world frame.
+        Handles both 13-dim (rigid body only) and 25-dim (with actuator) states.
+        """
+        q = state[6:10]
+        R_B_W = quaternion_to_rotm(q)
+        v_body = state[3:6]
+        v_world = R_B_W @ v_body
+        state_new = state.copy()
+        state_new[3:6] = v_world
+        return state_new
+
+    def get_json_file_name(self):
+        return self.solver_json
