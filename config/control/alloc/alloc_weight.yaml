@@ -1,0 +1,4 @@
+# Allocator weights for ActuatorAwareAllocator
+allocator_params:
+  Q: [1.0, 1.0, 1.0, 1.0]   # Wrench tracking weights [F, Mx, My, Mz]
+  R: 0.01
