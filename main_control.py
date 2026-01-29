@@ -101,7 +101,7 @@ def main():
         from control.control_allocator.actuator_aware_allocator import ActuatorAwareAllocator
         control_allocator = ActuatorAwareAllocator(DroneParams=params['nominal_drone_params'],
                                                    RotorParams=params['nominal_rotor_params'],
-                                                   AllocWeight=params['allocator_params'])
+                                                   AllocWeight=params['allocator_weights'])
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
@@ -238,8 +238,10 @@ def main():
                 u_d_match = np.array([d_est[2], d_est[3], d_est[4], d_est[5]])
                 u_des = u_des - u_d_match
 
+            w_cmd_cand = hexa_converter.compute_des_rotor_speed(u_des)
+
             # Actuator-aware allocation
-            w_cmd = control_allocator.allocate(s_rotor, u_des, dt)
+            w_cmd = control_allocator.allocate(s_rotor, u_des, w_cmd_cand, dt)
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t = {t_sim[i]:.2f}s")

@@ -84,8 +84,8 @@ def get_nmpc_params(config):
 
 def get_allocator_params(config):
     allocator_params = {
-        'Q': np.array([float(q) for q in config['allocator_params']['Q']]),
-        'R': float(config['allocator_params']['R']),
+        'Q': np.array([float(q) for q in config['allocator_weights']['Q']]),
+        'R': float(config['allocator_weights']['R']),
     }
     return allocator_params
 
