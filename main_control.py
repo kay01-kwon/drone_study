@@ -300,7 +300,7 @@ def main():
                      params['true_dynamic_params'])
 
     # Cleanup for NMPC
-    if control_type in ('nmpc_param', 'nmpc_comp', 'nmpc_actuator'):
+    if control_type in ('nmpc', 'nmpc_actuator'):
         from utils.acados_cleanup import cleanup_acados_files
         cleanup_acados_files(controller.get_json_file_name())
 
