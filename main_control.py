@@ -5,9 +5,9 @@ Supports multiple control methods, disturbance observers and dynamic parameter e
 
 Control types:
 - nmpc_comp: NMPC compensation DOB
-- nmpc_param: NMPC Param --> DOB mendatory (Default l1)
-- nmpc_actuator: NMPC with 2nd-order actuator dynamics
+- nmpc_actuator: NMPC compensation DOB + actuator aware control allocation
 - pd: Geometric control
+- pd_actuator: Geometric control + actuator aware control allocation
 
 DOB types:
 - none: No disturbance observer
@@ -16,7 +16,7 @@ DOB types:
 
 Examples:
     python3 main_control.py --control nmpc_comp --dob none
-    python3 main_control.py --control nmpc_param --dob hgdo
+    python3 main_control.py --control nmpc_actuator --dob hgdo
     python3 main_control.py --control pd --dob hgdo
 
 Author: Geonwoo Kwon
@@ -35,7 +35,6 @@ from sim_model.S550_model import S550_Sim_Model
 from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
 from utils.math_tool import quaternion_to_euler
-from utils import yaml_loader
 from utils.custom_ode import custom_rk4
 from utils.print_tool import print_statistics
 
