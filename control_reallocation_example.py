@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize, NonlinearConstraint
-
+from utils.drone_converter import HexaConverter
 # ==========================================
 # 1. 고정 파라미터 및 한계치 설정 (From Identified Model)
 # ==========================================
@@ -74,7 +74,10 @@ class ActuatorAwareAllocator:
             alpha_raw = alpha_curr + jerk_sat*DT
             alpha_sat = soft_saturation(alpha_raw, ALPHA_MAX, stiffness=1.0)
 
-            w_next = w_curr + alpha_sat * DT + 0.5 * jerk_sat * DT ** 2
+
+            j_eff = (alpha_sat - alpha_curr)/DT
+
+            w_next = w_curr + alpha_sat * DT + 0.5 * j_eff * DT ** 2
 
             u_achieved = compute_wrench(w_next)
             # L2 norm bewteen optimal control input and desired control input
@@ -84,17 +87,13 @@ class ActuatorAwareAllocator:
             residual_reg = (w_cmd - w_curr).T @ self.R @ (w_cmd - w_curr)
             return l2_norm + residual_reg
 
-        # lb/ub setup: [-alpha_max, -j_max] ~ [alpha_max, j_max]
-        lb = np.concatenate([[-ALPHA_MAX] * 6, [-J_MAX] * 6])
-        ub = np.concatenate([[ALPHA_MAX] * 6, [J_MAX] * 6])
-
         # [C] 최적화 실행 (SLSQP 알고리즘 사용)
         res = minimize(
             objective,
             x0=self.last_w_cmd,
             method='SLSQP',
             bounds=[(W_MIN, W_MAX)] * 6,  # RPM 박스 제약
-            options={'ftol': 1e-20, 'disp': False}
+            options={'ftol': 1e-6, 'disp': True}
         )
 
         if res.success:
@@ -108,7 +107,7 @@ class ActuatorAwareAllocator:
 # ==========================================
 # 4. 실행 예제 (User Scenario)
 # ==========================================
-Q = np.array([100.0, 1.0, 1.0, 1.0])
+Q = np.array([100.0, 10.0, 10.0, 5.0])
 R = 0.0
 
 alloc_params = {'Q': Q, 'R': R}

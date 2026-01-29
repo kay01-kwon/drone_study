@@ -45,8 +45,8 @@ def load_parameters(control_type, dob_type):
         params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
 
         if control_type == 'nmpc_actuator':
-            config_alloc = yaml_loader.load_yaml('config/control/alloc/alloc_weight.yaml')
-            params['allocator_params'] = yaml_loader.get_allocator_params(config_alloc)
+            config_alloc = yaml_loader.load_yaml('config/control/allocator/allocator.yaml')
+            params['allocator_weights'] = yaml_loader.get_allocator_params(config_alloc)
 
 
     elif control_type == "pd" or control_type == "pd_actuator":
@@ -59,8 +59,8 @@ def load_parameters(control_type, dob_type):
         params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
 
         if control_type == 'pd_actuator':
-            config_alloc = yaml_loader.load_yaml('config/control/alloc/alloc_weight.yaml')
-            params['allocator_params'] = yaml_loader.get_allocator_params(config_alloc)
+            config_alloc = yaml_loader.load_yaml('config/control/allocator/allocator.yaml')
+            params['allocator_weights'] = yaml_loader.get_allocator_params(config_alloc)
 
     # 3. Load DOB-specific parameters (DOB will use nominal params from control config)
     if dob_type == "hgdo":

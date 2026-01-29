@@ -24,9 +24,6 @@ class ActuatorAwareAllocator:
         self.alpha_max = RotorParams['alpha_rotor_max']
         self.j_max = RotorParams['jerk_rotor_max']
 
-        alpha_max_array = self.alpha_max*np.ones((6,))
-        j_max_array = self.j_max*np.ones((6,))
-
         w_idle_speed = 2000
         # It is used for warm start
         self.last_w_cmd = np.array([w_idle_speed]*6)
@@ -37,7 +34,7 @@ class ActuatorAwareAllocator:
         # Regularization weight
         self.R = AllocWeight['R']*np.eye(6)
 
-    def allocate(self, s_rotor_curr, u_des, dt):
+    def allocate(self, s_rotor_curr, u_des, w_cmd_cand, dt):
         """
 
         :param s_rotor_curr: current rotor state (speed, acceleration) (12,)
@@ -48,29 +45,39 @@ class ActuatorAwareAllocator:
         w_rotor_curr, alpha_rotor_curr = self._unpack(s_rotor_curr)
 
         def objective(w_cmd):
+
+            lambda_a = 1e-8
+            lambda_j = 1e-12
+
             # 2nd order rotor dynamics
             j_phy = self._get_jerk_vec(w_rotor_curr, alpha_rotor_curr, w_cmd)
             j_sat = self._soft_saturation(j_phy, self.j_max)
+
             alpha_next_raw = alpha_rotor_curr + j_sat*dt
             alpha_sat = self._soft_saturation(alpha_next_raw, self.alpha_max)
 
+            j_eff = (alpha_sat - alpha_rotor_curr)/dt
+
             w_next = (w_rotor_curr
-                      + alpha_sat * dt
-                      + 0.5 * j_sat * dt**2)
+                      + alpha_rotor_curr * dt
+                      + 0.5 * j_eff * dt**2)
             u_d_var = self._compute_wrench(w_next)
 
             l2_norm = (u_d_var - u_des).T @ self.Q @ (u_d_var - u_des)
 
+            a_penalty = lambda_a * np.sum(alpha_sat**2)
+            j_penalty = lambda_j * np.sum(j_eff**2)
+
             reg_term = (w_cmd - self.last_w_cmd).T @ self.R @ (w_cmd - self.last_w_cmd)
 
-            return l2_norm + reg_term
+            return l2_norm + reg_term + a_penalty + j_penalty
 
         res = minimize(objective,
-                       x0 = self.last_w_cmd,
+                       x0 = w_cmd_cand,
                        method='SLSQP',
                        bounds = [(self.w_rotor_min, self.w_rotor_max)]*6,
-                       options = {'ftol': 1e-6,
-                                  'disp': False})
+                       tol=1e-6,
+                       options = {'disp': False})
 
         if res.success:
             self.last_w_cmd = res.x
