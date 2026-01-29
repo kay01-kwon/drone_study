@@ -80,6 +80,13 @@ def get_actuator_params(config):
     }
     return actuator_params
 
+def get_allocator_params(config):
+    allocator_params = {
+        'Q': np.array([float(q) for q in config['allocator_params']['Q']]),
+        'R': float(config['allocator_params']['R']),
+    }
+    return allocator_params
+
 def get_trajectory_params(config):
     trajectory_params = {
         'max_velocity': config['trajectory']['max_velocity'],

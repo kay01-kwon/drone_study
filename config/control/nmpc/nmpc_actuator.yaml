@@ -25,6 +25,11 @@ actuator_params:
   alpha_max: 15000  # Max rotor acceleration [RPM/s]
   j_max: 250000     # Max jerk [RPM/s^2]
 
+# Allocator weights for ActuatorAwareAllocator
+allocator_params:
+  Q: [1.0, 1.0, 1.0, 1.0]   # Wrench tracking weights [F, Mx, My, Mz]
+  R: 0.01                    # Regularization weight (scalar)
+
 nmpc_params:
   t_horizon: 1.0
   n_nodes: 20
