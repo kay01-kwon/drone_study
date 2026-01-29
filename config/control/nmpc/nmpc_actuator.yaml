@@ -17,19 +17,6 @@ rotor_params:
   jerk_rotor_max: 250000  # Maximum rotor jerk [RPM/s^2]
   num_rotors: 6  # Number of rotors
 
-# Actuator parameters for 2nd-order model in NMPC
-actuator_params:
-  p1: 25.16687    # Damping coefficient
-  p2: 0.003933    # Speed-dependent damping
-  p3: 515.605     # Stiffness (bandwidth^2)
-  alpha_max: 15000  # Max rotor acceleration [RPM/s]
-  j_max: 250000     # Max jerk [RPM/s^2]
-
-# Allocator weights for ActuatorAwareAllocator
-allocator_params:
-  Q: [1.0, 1.0, 1.0, 1.0]   # Wrench tracking weights [F, Mx, My, Mz]
-  R: 0.01                    # Regularization weight (scalar)
-
 nmpc_params:
   t_horizon: 1.0
   n_nodes: 20
@@ -41,4 +28,4 @@ nmpc_params:
   # Actuator state weights (single value, applied to all 6 rotors each)
   Q_w_rot: 1e-20        # w_rot weight (rotor speed tracking)
   Q_alpha_rot: 1e-30    # alpha_rot weight (rotor acceleration)
-  RArray: [ 3e-7 ]    # w_cmd weight (applied to all 6, scaled for RPM inputs)
+  R: 3e-7    # w_cmd weight (applied to all 6, scaled for RPM inputs)
