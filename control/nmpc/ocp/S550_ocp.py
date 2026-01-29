@@ -10,7 +10,7 @@ class S550Ocp:
         Constructor
         :param DynParam: m, MoiArray (Jxx, Jyy, Jzz)
         :param DroneParam: arm_length, rotor_const, moment_const, T_max, T_min
-        :param MpcParam: t_horizon, n_nodes, QArray, RArray
+        :param MpcParam: t_horizon, n_nodes, QArray, R
         '''
         if DynParam is None:
             m = 3.0
@@ -45,7 +45,7 @@ class S550Ocp:
             t_horizon = MpcParam['t_horizon']
             n_nodes = MpcParam['n_nodes']
             Q = np.diag(MpcParam['QArray'])
-            R = MpcParam['RArray']*np.eye(6)
+            R = MpcParam['R']*np.eye(6)
 
 
         self.ocp = AcadosOcp()

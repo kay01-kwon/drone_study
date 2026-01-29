@@ -32,12 +32,18 @@ def get_drone_params(config):
     return drone_params
 
 def get_rotor_params(config):
+    p_array = config['rotor_params']['p']
     rotor_params = {
-        'p': np.array(config['rotor_params']['p']),
+        'p': np.array(p_array),
+        'p1': p_array[0],
+        'p2': p_array[1],
+        'p3': p_array[2],
         'w_rotor_min': config['rotor_params']['w_rotor_min'],
         'w_rotor_max': config['rotor_params']['w_rotor_max'],
         'alpha_rotor_max': config['rotor_params']['alpha_rotor_max'],
+        'alpha_max': config['rotor_params']['alpha_rotor_max'],  # alias for allocator
         'jerk_rotor_max': config['rotor_params']['jerk_rotor_max'],
+        'j_max': config['rotor_params']['jerk_rotor_max'],  # alias for allocator
         'num_rotors': config['rotor_params']['num_rotors']
     }
     return rotor_params
@@ -57,11 +63,17 @@ def get_pd_gain_params(config):
     return gain_params
 
 def get_nmpc_params(config):
+    # Handle both 'R' and 'RArray' keys for backwards compatibility
+    if 'R' in config['nmpc_params']:
+        r_value = float(config['nmpc_params']['R'])
+    else:
+        r_value = float(config['nmpc_params']['RArray'])
+
     nmpc_params = {
         't_horizon': config['nmpc_params']['t_horizon'],
         'n_nodes': config['nmpc_params']['n_nodes'],
         'QArray': [float(q) for q in config['nmpc_params']['QArray']],
-        'RArray': float(config['nmpc_params']['RArray']),
+        'R': r_value,
     }
     # Optional actuator state weights (single scalar each)
     if 'Q_w_rot' in config['nmpc_params']:
@@ -69,16 +81,6 @@ def get_nmpc_params(config):
     if 'Q_alpha_rot' in config['nmpc_params']:
         nmpc_params['Q_alpha_rot'] = float(config['nmpc_params']['Q_alpha_rot'])
     return nmpc_params
-
-def get_actuator_params(config):
-    actuator_params = {
-        'p1': config['actuator_params']['p1'],
-        'p2': config['actuator_params']['p2'],
-        'p3': config['actuator_params']['p3'],
-        'alpha_max': config['actuator_params']['alpha_max'],
-        'j_max': config['actuator_params']['j_max'],
-    }
-    return actuator_params
 
 def get_allocator_params(config):
     allocator_params = {
