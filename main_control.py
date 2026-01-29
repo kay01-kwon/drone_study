@@ -97,11 +97,11 @@ def main():
                                                     DroneParam=params['nominal_drone_params'],
                                                     RotorParam=params['nominal_rotor_params'],
                                                     RlsParam=params['rls_params'])
-    if control_type == 'nmpc_actuator':
+    if control_type == 'nmpc_actuator' or control_type == 'pd_actuator':
         from control.control_allocator.actuator_aware_allocator import ActuatorAwareAllocator
         control_allocator = ActuatorAwareAllocator(DroneParams=params['nominal_drone_params'],
                                                    RotorParams=params['nominal_rotor_params'],
-                                                   AllocWeight=)
+                                                   AllocWeight=params['allocator_params'])
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
@@ -226,9 +226,31 @@ def main():
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t = {t_sim[i]:.2f}s")
 
+        elif control_type == 'nmpc_actuator':
+            # NMPC gives desired rotor speeds -> convert to wrench -> allocate with actuator dynamics
+            status, w_cmd_nmpc = controller.solve_for_trajectory(s_feedback, t_sim[i])
+
+            # Convert NMPC output to wrench
+            u_des = hexa_converter.compute_u(w_cmd_nmpc)
+
+            # DOB compensation
+            if dob is not None:
+                u_d_match = np.array([d_est[2], d_est[3], d_est[4], d_est[5]])
+                u_des = u_des - u_d_match
+
+            # Actuator-aware allocation
+            w_cmd = control_allocator.allocate(s_rotor, u_des, dt)
+
+            if status != 0 and i % 100 == 0:
+                print(f"Warning: NMPC solver status {status} at t = {t_sim[i]:.2f}s")
+
         elif control_type == 'pd':
             u = controller.compute_u(s_feedback, ref, d_est)
             w_cmd = hexa_converter.compute_des_rotor_speed(u)
+
+        elif control_type == 'pd_actuator':
+            u_des = controller.compute_u(s_feedback, ref, d_est)
+            w_cmd = control_allocator.allocate(s_rotor, u_des, dt)
 
         # Simulation step
         t_ode = [t_sim[i], t_sim[i+1]]
