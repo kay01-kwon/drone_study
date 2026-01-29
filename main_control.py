@@ -4,10 +4,10 @@
 Supports multiple control methods, disturbance observers and dynamic parameter estimator:
 
 Control types:
-- nmpc_comp: NMPC compensation DOB
-- nmpc_param: NMPC Param --> DOB mendatory (Default l1)
-- nmpc_actuator: NMPC with 2nd-order actuator dynamics
+- nmpc: NMPC compensation DOB
+- nmpc_actuator: NMPC compensation DOB + actuator aware control allocation
 - pd: Geometric control
+- pd_actuator: Geometric control + actuator aware control allocation
 
 DOB types:
 - none: No disturbance observer
@@ -16,7 +16,7 @@ DOB types:
 
 Examples:
     python3 main_control.py --control nmpc_comp --dob none
-    python3 main_control.py --control nmpc_param --dob hgdo
+    python3 main_control.py --control nmpc_actuator --dob hgdo
     python3 main_control.py --control pd --dob hgdo
 
 Author: Geonwoo Kwon
@@ -35,7 +35,6 @@ from sim_model.S550_model import S550_Sim_Model
 from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
 from utils.math_tool import quaternion_to_euler
-from utils import yaml_loader
 from utils.custom_ode import custom_rk4
 from utils.print_tool import print_statistics
 
@@ -46,16 +45,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
     Examples:
-        python3 main_control.py --control nmpc_comp --dob none
-        python3 main_control.py --control nmpc_param --dob hgdo
-        python3 main_control.py --control nmpc_actuator --dob l1
+        python3 main_control.py --control nmpc --dob none
+        python3 main_control.py --control nmpc_actuator --dob hgdo
+        python3 main_control.py --control nmpc --dob l1
         python3 main_control.py --control pd --dob hgdo
         """
     )
 
     parser.add_argument('--control', type=str, default='nmpc',
-                       choices=['nmpc_comp', 'nmpc_param', 'nmpc_actuator', 'pd'],
-                       help='Control method: nmpc_comp (DOB Compensation), nmpc_param (Dynamic param), nmpc_actuator (Actuator-aware) or pd (Geometric)')
+                       choices=['nmpc', 'nmpc_actuator', 'pd', 'pd_actuator'],
+                       help='Control method: nmpc (DOB Compensation), pd (Geometric)')
 
     parser.add_argument('--dob', type=str, default='l1',
                        choices=['none', 'hgdo', 'l1'],
@@ -98,8 +97,11 @@ def main():
                                                     DroneParam=params['nominal_drone_params'],
                                                     RotorParam=params['nominal_rotor_params'],
                                                     RlsParam=params['rls_params'])
-    m_nom = params['nominal_dynamic_params']['m']
-    param_est = np.array([m_nom, 0.0, 0.0])
+    if control_type == 'nmpc_actuator':
+        from control.control_allocator.actuator_aware_allocator import ActuatorAwareAllocator
+        control_allocator = ActuatorAwareAllocator(DroneParams=params['nominal_drone_params'],
+                                                   RotorParams=params['nominal_rotor_params'],
+                                                   AllocWeight=)
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
@@ -208,7 +210,7 @@ def main():
 
 
         # Compute control
-        if control_type == 'nmpc_comp':
+        if control_type == 'nmpc':
             status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i])
 
             if dob is not None:
@@ -218,27 +220,11 @@ def main():
                                       d_est[4],
                                       d_est[5]])
                 u_comp = u_mpc - u_d_match
+                # Without actuator model
                 w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t = {t_sim[i]:.2f}s")
-
-        elif control_type == 'nmpc_param':
-            # By passing dynamic parameters to nmpc,
-            # you do not have to compensate for disturbance at all
-            status, w_cmd = controller.solve_for_trajectory(s_feedback, t_sim[i],
-                                                            param_est = param_est, u_prev = None)
-            if status != 0 and i % 100 == 0:
-                print(f"Warning: NMPC solver status {status} at t={t_sim[i]:.2f}s")
-
-        elif control_type == 'nmpc_actuator':
-            # Full 25-dim state: [p, v, q, w, w_rot, alpha_rot]
-            s_full = np.concatenate([s_feedback, w_rotor, alpha_rotor])
-            status, w_cmd = controller.solve_for_trajectory(s_full, t_sim[i],
-                                                            param_est=param_est,
-                                                            u_prev=None)
-            if status != 0 and i % 100 == 0:
-                print(f"Warning: NMPC actuator solver status {status} at t={t_sim[i]:.2f}s")
 
         elif control_type == 'pd':
             u = controller.compute_u(s_feedback, ref, d_est)

@@ -1,10 +1,10 @@
 from acados_template import AcadosOcp, AcadosOcpSolver
-from control.nmpc.model.S550_param_model import S550ParamModel
+from control.nmpc.model.S550_model import S550_model
 from utils.math_tool import quaternion_to_rotm
 from scipy.linalg import block_diag
 import numpy as np
 
-class S550ParamOcp:
+class S550Ocp:
     def __init__(self, DynParam = None, DroneParam = None, MpcParam = None):
         '''
         Constructor
@@ -13,11 +13,9 @@ class S550ParamOcp:
         :param MpcParam: t_horizon, n_nodes, QArray, RArray
         '''
         if DynParam is None:
-            m = 2.9
+            m = 3.0
             J = np.array([0.06, 0.06, 0.08])
             DynParam = {'m': m, 'MoiArray': J}
-        else:
-            m = DynParam['m']
 
         u_max = 1.4765e-7 * 7300.0**2
         u_min = 1.4765e-7 * 2000.0**2
@@ -27,7 +25,7 @@ class S550ParamOcp:
             self.C_T = 1.465e-7
             k_m = 0.01569
             DroneParam = {'arm_length':l,
-                          'motor_const':C_T,
+                          'motor_const':self.C_T,
                           'moment_const':k_m}
         else:
             self.C_T = DroneParam['motor_const']
@@ -47,13 +45,13 @@ class S550ParamOcp:
             t_horizon = MpcParam['t_horizon']
             n_nodes = MpcParam['n_nodes']
             Q = np.diag(MpcParam['QArray'])
-            R = MpcParam['RArray'][0]*np.eye(6)
+            R = MpcParam['RArray']*np.eye(6)
 
 
         self.ocp = AcadosOcp()
 
         # Instantiate model object
-        model_obj = S550ParamModel(DynParam, DroneParam)
+        model_obj = S550_model(DynParam, DroneParam)
         acados_model = model_obj.export_acados_model()
 
         # Put acados model into ocp model
@@ -67,18 +65,9 @@ class S550ParamOcp:
         ])
 
         # Dim info
-        # The dimension of state and control input
         nx = acados_model.x.rows()
         nu = acados_model.u.rows()
         ny = nx + nu
-
-        #***************************************************
-        # Parameter dimension
-        self.n_params = acados_model.p.rows()
-
-        # Default parameter values
-        self.p_default = np.array([m, 0.0, 0.0])
-        #***************************************************
 
         # 1. Cost setup
 
@@ -126,9 +115,6 @@ class S550ParamOcp:
         self.ocp.solver_options.tf = t_horizon
         self.ocp.solver_options.N_horizon = n_nodes
 
-        # Set initial parameter values (required for models with parameters)
-        self.ocp.parameter_values = self.p_default
-
         # self.ocp_solver = AcadosOcpSolver(self.ocp)
         # generate json file and generate cython
         self.solver_json = 'acados_ocp_' + self.ocp.model.name + '.json'
@@ -141,27 +127,17 @@ class S550ParamOcp:
         self.ref_nmpc = np.zeros((13,))
         self.ref_nmpc[6] = 1.0
 
-        print(f"✓ NMPC created with {self.n_params} parameters")
-
-    def solve(self, state, ref, param_est = None, u_prev=None):
+    def solve(self, state, ref, u_prev=None):
         '''
         Solve OCP problem with warm start
         :param state: p (World), v (Body), q, w (Body)
         :param ref: p (World), v (World), yaw_des, dot_yaw_des
         :param u_prev: w_cmd1...w_cmd6 (Rotor speed)
-        :param DobCoeff: Delta mass, rx, ry
         :return: status, w_cmd(w_cmd1...w_cmd6)
         '''
 
         if u_prev is None:
             u_prev = np.zeros((6,))
-
-        #***********************************************
-        if param_est is None:
-            params = self.p_default
-        else:
-            params = param_est
-        #***********************************************
 
         self.ref_nmpc[0:6] = ref[0:6]
         self.ref_nmpc[6] = np.cos(ref[6]/2.0)
@@ -182,12 +158,6 @@ class S550ParamOcp:
         if self.previous_states is not None:
             # Shift previous trajectory forward by one step
             for stage in range(self.ocp.solver_options.N_horizon):
-
-                # ***********************************************
-                # Set parameter
-                self.ocp_solver.set(stage, 'p', params)
-                # ***********************************************
-
                 if stage < self.ocp.solver_options.N_horizon - 1:
                     # Use next state from previous trajectory
                     prev_state = self.previous_states[stage + 1]
@@ -199,19 +169,11 @@ class S550ParamOcp:
                     self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
 
             # Set terminal reference
-            #*****************************************************************
-            self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'p', params)
-            #*****************************************************************
             self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'y_ref', self.ref_nmpc)
         else:
             # First solve: use constant reference
             for stage in range(self.ocp.solver_options.N_horizon):
                 self.ocp_solver.set(stage, 'y_ref', y_ref)
-
-                # ***********************************************
-                # Set parameter
-                self.ocp_solver.set(stage, 'p', params)
-                # ***********************************************
 
             # Set y ref at the terminal stage
             self.ocp_solver.set(self.ocp.solver_options.N_horizon, 'y_ref', y_ref_N)
@@ -232,12 +194,11 @@ class S550ParamOcp:
 
         return status, rotor_speed
 
-    def solve_for_trajectory(self, state, t_curr, param_est = None, u_prev=None):
+    def solve_for_trajectory(self, state, t_curr, u_prev=None):
         '''
         Solve OCP problem with trajectory tracking along prediction horizon
         :param state: p (World), v (Body), q, w (Body)
         :param t_curr: Current time
-        :param param_est: m_est, com_offset_x, com_offset_y in turn
         :param u_prev: u1...u6 (Rotor thrust)
         :return: status, w_cmd(w_cmd1...w_cmd6)
         '''
@@ -245,13 +206,6 @@ class S550ParamOcp:
 
         if u_prev is None:
             u_prev = np.zeros((6,))
-
-        #***********************************************
-        if param_est is None:
-            params = self.p_default
-        else:
-            params = param_est
-        #***********************************************
 
         # Get time step for prediction horizon
         N = self.ocp.solver_options.N_horizon
@@ -267,12 +221,6 @@ class S550ParamOcp:
 
         # Set reference for each stage along the prediction horizon
         for stage in range(N):
-
-            # ***********************************************
-            # Set parameter
-            self.ocp_solver.set(stage, 'p', params)
-            # ***********************************************
-
             # Get reference at future time
             t_ref = t_curr + stage * dt
             ref = get_reference(t_ref)
@@ -296,10 +244,6 @@ class S550ParamOcp:
         ref_nmpc_N[12] = ref_N[7]
 
         self.ocp_solver.set(N, 'y_ref', ref_nmpc_N)
-
-        #*************************************
-        self.ocp_solver.set(N, 'p', params)
-        #*************************************
 
         # Solve OCP
         status = self.ocp_solver.solve()

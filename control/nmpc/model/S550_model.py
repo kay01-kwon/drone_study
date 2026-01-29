@@ -3,13 +3,13 @@ import casadi as cs
 import numpy as np
 from control.nmpc.cs_utils import cs_math_tool
 
-class S550ParamModel:
+class S550_model:
     def __init__(self, DynParam, DroneParam):
         '''
         DroneParam: m, arm_length, motor_const, moment_const
         '''
 
-        self.model_name = 'S550_param_model'
+        self.model_name = 'S550_model'
         self.model = AcadosModel()
 
         # drone parameter
@@ -39,11 +39,6 @@ class S550ParamModel:
                             self.u4, self.u5, self.u6)
         self.u_dim = 6
 
-        #*********************************************
-        # Pass parameter related to dm and com offset
-        self.param = cs.MX.sym('p',3)
-        #*********************************************
-
         # The time derivative of state
         self.dpdt = cs.MX.sym('dpdt', 3)
         self.dvdt = cs.MX.sym('dvdt', 3)
@@ -59,6 +54,26 @@ class S550ParamModel:
         '''
         f_expl = cs.vertcat(self._p_dynamics(), self._v_dynamics(),
                             self._q_dynamics(), self._w_dynamics())
+        # print('dpdt')
+        # print(f_expl[0])
+        # print(f_expl[1])
+        # print(f_expl[2])
+        #
+        # print('dvdt')
+        # print(f_expl[3])
+        # print(f_expl[4])
+        # print(f_expl[5])
+        #
+        # print('dqdt')
+        # print(f_expl[6])
+        # print(f_expl[7])
+        # print(f_expl[8])
+        # print(f_expl[9])
+        #
+        # print('dwdt')
+        # print(f_expl[10])
+        # print(f_expl[11])
+        # print(f_expl[12])
 
         f_impl = self.xdot - f_expl
 
@@ -67,9 +82,6 @@ class S550ParamModel:
         self.model.x = self.x
         self.model.xdot = self.xdot
         self.model.u = self.u
-        #********************************************
-        self.model.p = self.param
-        #********************************************
         self.model.name = self.model_name
 
         return self.model
@@ -87,12 +99,9 @@ class S550ParamModel:
         :return: dvdt ( World frame )
         '''
 
-        # Get dynamic parameter
-        m_est = self.param[0]
-        delta_m = self.m / m_est - 1.0
-
         # Collective thrust
-        f_col = self._compute_collective_thrust()
+        f_col = (self.u1 + self.u2 + self.u3
+                 + self.u4 + self.u5 + self.u6)
 
         # Force in 3 dim ( Body frame )
         f = cs.vertcat(0.0, 0.0, f_col)
@@ -104,9 +113,7 @@ class S550ParamModel:
         R = cs_math_tool.quaternion_to_rotm(self.q)
 
         dvdt = cs.mtimes(R, acc_input) + g_vec
-        dvdt_delta = delta_m*cs.mtimes(R, acc_input)
-        dvdt_combined = dvdt + dvdt_delta
-        return dvdt_combined
+        return dvdt
 
     def _q_dynamics(self):
         '''
@@ -139,30 +146,13 @@ class S550ParamModel:
         w_y = self.w[1]
         w_z = self.w[2]
 
-        # Disturbance due to com offset
-        rx = self.param[1]
-        ry = self.param[2]
-
-        f_col = self._compute_collective_thrust()
-
-        #******************************************************
-        disturbance_com_offset = cs.vertcat(-ry*f_col/Jxx,
-                                            rx*f_col/Jyy,
-                                            0.0)
-        #******************************************************
-
         # inertial effect = J_inv @ (w x (J*w))
         inertial_effect = cs.vertcat((Jzz-Jyy)/Jxx*w_y*w_z,
                                      (Jxx-Jzz)/Jyy*w_x*w_z,
                                      (Jyy-Jxx)/Jzz*w_x*w_y)
 
-        dwdt = m_vec - inertial_effect + disturbance_com_offset
+        dwdt = m_vec - inertial_effect
         return dwdt
-
-    def _compute_collective_thrust(self):
-        f_col = (self.u1 + self.u2 + self.u3
-                 + self.u4 + self.u5 + self.u6)
-        return f_col
 
     def _control_alloc_moment(self):
         '''
