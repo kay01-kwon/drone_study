@@ -39,6 +39,9 @@ def compute_wrench(w_rot):
     return np.array([f, mx, my, mz])
 
 
+def soft_saturation(x, limit, stiffness = 1.0):
+    return limit/stiffness * np.tanh(stiffness*x/limit)
+
 # ==========================================
 # 3. 최적 할당 클래스 (Allocator)
 # ==========================================
@@ -65,7 +68,13 @@ class ActuatorAwareAllocator:
         def objective(w_cmd):
             # 2차 모델 기반 다음 스텝 속도 예측
             jerk = get_jerk_vec(w_curr, alpha_curr, w_cmd)
-            w_next = w_curr + alpha_curr * DT + 0.5 * jerk * DT ** 2
+
+            jerk_sat = soft_saturation(jerk, J_MAX, stiffness=1.0)
+
+            alpha_raw = alpha_curr + jerk_sat*DT
+            alpha_sat = soft_saturation(alpha_raw, ALPHA_MAX, stiffness=1.0)
+
+            w_next = w_curr + alpha_sat * DT + 0.5 * jerk_sat * DT ** 2
 
             u_achieved = compute_wrench(w_next)
             # L2 norm bewteen optimal control input and desired control input
@@ -75,18 +84,9 @@ class ActuatorAwareAllocator:
             residual_reg = (w_cmd - w_curr).T @ self.R @ (w_cmd - w_curr)
             return l2_norm + residual_reg
 
-        # Nonlinear constraint
-        def saturation_constraints(w_cmd):
-            jerk = get_jerk_vec(w_curr, alpha_curr, w_cmd)
-            alpha_next = alpha_curr + jerk * DT
-            # Return Acceleration and jerk
-            return np.concatenate([alpha_next, jerk])
-
         # lb/ub setup: [-alpha_max, -j_max] ~ [alpha_max, j_max]
         lb = np.concatenate([[-ALPHA_MAX] * 6, [-J_MAX] * 6])
         ub = np.concatenate([[ALPHA_MAX] * 6, [J_MAX] * 6])
-
-        nl_cons = NonlinearConstraint(saturation_constraints, lb, ub)
 
         # [C] 최적화 실행 (SLSQP 알고리즘 사용)
         res = minimize(
@@ -94,8 +94,7 @@ class ActuatorAwareAllocator:
             x0=self.last_w_cmd,
             method='SLSQP',
             bounds=[(W_MIN, W_MAX)] * 6,  # RPM 박스 제약
-            constraints=[nl_cons],
-            options={'ftol': 1e-6, 'disp': False}
+            options={'ftol': 1e-20, 'disp': False}
         )
 
         if res.success:
@@ -109,8 +108,8 @@ class ActuatorAwareAllocator:
 # ==========================================
 # 4. 실행 예제 (User Scenario)
 # ==========================================
-Q = np.array([1.0, 3000.0, 3000.0, 1500.0])
-R = 1e-8
+Q = np.array([100.0, 1.0, 1.0, 1.0])
+R = 0.0
 
 alloc_params = {'Q': Q, 'R': R}
 allocator = ActuatorAwareAllocator(AllocParams=alloc_params)
@@ -120,7 +119,7 @@ w_now = np.array([5860.0] * 6)
 alpha_now = np.zeros(6)
 
 # NMPC 목표: 30N 추력, Mx 0.1Nm
-u_target = np.array([30.0, 0.3, 0.05, 0.0])
+u_target = np.array([30.0, 0.3, 0.005, 0.0])
 
 w_cmd_optimal = allocator.allocate(w_now, alpha_now, u_target)
 
@@ -130,6 +129,12 @@ print(f"\nDesired wrench: {u_target} (F, Mx, My, Mz)\n)")
 # 검증을 위한 예측 결과 계산
 j_pred = get_jerk_vec(w_now, alpha_now, w_cmd_optimal)
 w_next_pred = w_now + alpha_now * DT + 0.5 * j_pred * DT ** 2
+u_cmd = compute_wrench(w_cmd_optimal)
 u_final = compute_wrench(w_next_pred)
+
+
+print(f"cmd F: {u_cmd[0]:.4f}, Mx: {u_cmd[1]:.4f},"
+      f"My: {u_cmd[2]:.4f}, Mz: {u_cmd[3]:.4f}\n")
+
 print(f"Predicted F: {u_final[0]:.4f}, Mx: {u_final[1]:.4f},"
       f"My: {u_final[2]:.4f}, Mz: {u_final[3]:.4f}\n")

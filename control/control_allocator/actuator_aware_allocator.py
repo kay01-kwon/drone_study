@@ -11,9 +11,9 @@ class ActuatorAwareAllocator:
 
         # 2. Actuator parameters
         # 2nd order dynamical parameters
-        self.p1 = RotorParams['p1']     # Friction
-        self.p2 = RotorParams['p2']     # Drag
-        self.p3 = RotorParams['p3']     # Stiffness
+        self.p1 = RotorParams['p'][0]     # Friction
+        self.p2 = RotorParams['p'][1]     # Drag
+        self.p3 = RotorParams['p'][2]     # Stiffness
 
         # 3. Saturation condition
         # Rotor speed constraint
@@ -21,17 +21,15 @@ class ActuatorAwareAllocator:
         self.w_rotor_min = RotorParams['w_rotor_min']
 
         # Acceleration and jerk constraint
-        self.alpha_max = RotorParams['alpha_max']
-        self.j_max = RotorParams['j_max']
+        self.alpha_max = RotorParams['alpha_rotor_max']
+        self.j_max = RotorParams['jerk_rotor_max']
 
-        # Lower and upper bound setup for Nonlinear constraint
-        self.lb = np.concatenate([[-self.alpha_max]*6, [-self.j_max]*6])
-        self.ub = np.concatenate([[self.alpha_max]*6, [self.j_max]*6])
+        alpha_max_array = self.alpha_max*np.ones((6,))
+        j_max_array = self.j_max*np.ones((6,))
 
         w_idle_speed = 2000
-        w_idle_cmd = w_idle_speed * 8191.0 / 9800.0
         # It is used for warm start
-        self.last_w_cmd = np.array([w_idle_cmd]*6)
+        self.last_w_cmd = np.array([w_idle_speed]*6)
 
         # 4. Weight parameters
         # Weight for collective thrust and moment along x, y, and z
@@ -51,31 +49,26 @@ class ActuatorAwareAllocator:
 
         def objective(w_cmd):
             # 2nd order rotor dynamics
-            j_vec = self._get_jerk_vec(s_rotor_curr, w_cmd)
+            j_phy = self._get_jerk_vec(w_rotor_curr, alpha_rotor_curr, w_cmd)
+            j_sat = self._soft_saturation(j_phy, self.j_max)
+            alpha_next_raw = alpha_rotor_curr + j_sat*dt
+            alpha_sat = self._soft_saturation(alpha_next_raw, self.alpha_max)
+
             w_next = (w_rotor_curr
-                      + alpha_rotor_curr * w_cmd * dt
-                      + 0.5 * j_vec * dt**2)
+                      + alpha_sat * dt
+                      + 0.5 * j_sat * dt**2)
             u_d_var = self._compute_wrench(w_next)
 
             l2_norm = (u_d_var - u_des).T @ self.Q @ (u_d_var - u_des)
 
-            # Prevent too much acceleration
-            reg = (w_cmd - w_rotor_curr).T @ self.R @ (w_cmd - w_rotor_curr)
-            return l2_norm + reg
+            reg_term = (w_cmd - self.last_w_cmd).T @ self.R @ (w_cmd - self.last_w_cmd)
 
-        def saturation_constraints(w_cmd):
-            j_next = self._get_jerk_vec(s_rotor_curr, w_cmd)
-            alpha_next = alpha_rotor_curr + j_next * dt
-
-            return np.concatenate([alpha_next, j_next])
-
-        nl_cons = NonlinearConstraint(saturation_constraints, self.lb, self.ub)
+            return l2_norm + reg_term
 
         res = minimize(objective,
                        x0 = self.last_w_cmd,
                        method='SLSQP',
                        bounds = [(self.w_rotor_min, self.w_rotor_max)]*6,
-                       constraints = [nl_cons],
                        options = {'ftol': 1e-6,
                                   'disp': False})
 
@@ -83,9 +76,13 @@ class ActuatorAwareAllocator:
             self.last_w_cmd = res.x
             return res.x
         else:
+            print('Optimization failed')
             return self.last_w_cmd
 
-    def _get_jerk_vec(self, s_rotor_curr, w_cmd):
+    def _soft_saturation(self, x, limit):
+        return limit * np.tanh( x / limit )
+
+    def _get_jerk_vec(self, w_rotor, alpha_rotor, w_cmd):
         """
         Physical Jerk vector
         j_vec = -(p1 + p2*w)*alpha + p3*(w_cmd - w)
@@ -94,11 +91,8 @@ class ActuatorAwareAllocator:
         :return:
         """
 
-        w = s_rotor_curr[0:6]
-        alpha = s_rotor_curr[6:12]
-
-        j_vec = (-(self.p1 + self.p2*w)*alpha
-                 + self.p3*(w_cmd - w))
+        j_vec = (-(self.p1 + self.p2*w_rotor)*alpha_rotor
+                 + self.p3*(w_cmd - w_rotor))
         return j_vec
 
     def _unpack(self, s_rotor):
