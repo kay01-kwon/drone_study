@@ -2,6 +2,8 @@ from acados_template import AcadosOcp, AcadosOcpSolver
 from control.control_allocator.model.actuator_model import ActuatorModel
 import casadi as cs
 import numpy as np
+import os
+import shutil
 
 
 class ActuatorOCP:
@@ -93,10 +95,8 @@ class ActuatorOCP:
         x_lb = np.concatenate([w_lb, alpha_lb])
         x_ub = np.concatenate([w_ub, alpha_ub])
 
-        # Initial state constraint (will be updated in solve)
-        self.ocp.constraints.lbx_0 = np.zeros(nx)
-        self.ocp.constraints.ubx_0 = np.zeros(nx)
-        self.ocp.constraints.idxbx_0 = np.arange(nx)
+        # Initial state constraint using x0 (equality constraint)
+        self.ocp.constraints.x0 = np.zeros(nx)
 
         # Terminal state constraints
         self.ocp.constraints.lbx_e = x_lb
@@ -117,8 +117,16 @@ class ActuatorOCP:
         self.ocp.solver_options.tf = self.dt
         self.ocp.solver_options.N_horizon = N
 
+        # Clean up old generated code if exists
+        code_export_dir = self.ocp.model.name + '_acados_ocp'
+        if os.path.exists(code_export_dir):
+            shutil.rmtree(code_export_dir)
+
         # Build solver
         self.solver_json = 'acados_ocp_' + self.ocp.model.name + '.json'
+        if os.path.exists(self.solver_json):
+            os.remove(self.solver_json)
+
         AcadosOcpSolver.generate(self.ocp, json_file=self.solver_json)
         AcadosOcpSolver.build(self.ocp.code_export_directory, with_cython=True)
         self.ocp_solver = AcadosOcpSolver.create_cython_solver(self.solver_json)
@@ -134,9 +142,8 @@ class ActuatorOCP:
         :param s_rotor: Current rotor state [w(6), alpha(6)] (12D)
         :return: (status, j_opt) - solver status and optimal jerk (6D)
         """
-        # Set initial state constraint
-        self.ocp_solver.constraints_set(0, 'lbx', s_rotor)
-        self.ocp_solver.constraints_set(0, 'ubx', s_rotor)
+        # Set initial state (x0 equality constraint)
+        self.ocp_solver.set(0, 'x', s_rotor)
 
         # Set terminal reference (wrench_des)
         self.ocp_solver.set(1, 'yref', wrench_des)
