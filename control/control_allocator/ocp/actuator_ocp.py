@@ -117,13 +117,15 @@ class ActuatorOCP:
         self.ocp.solver_options.tf = self.dt
         self.ocp.solver_options.N_horizon = N
 
-        # Clean up old generated code if exists
-        code_export_dir = self.ocp.model.name + '_acados_ocp'
-        if os.path.exists(code_export_dir):
-            shutil.rmtree(code_export_dir)
+        # Set explicit code export directory to avoid conflicts with other acados solvers
+        self.ocp.code_export_directory = 'c_generated_code_allocator'
 
-        # Build solver
-        self.solver_json = 'acados_ocp_' + self.ocp.model.name + '.json'
+        # Clean up old generated code if exists
+        if os.path.exists(self.ocp.code_export_directory):
+            shutil.rmtree(self.ocp.code_export_directory)
+
+        # Build solver with unique json file path
+        self.solver_json = 'acados_ocp_allocator.json'
         if os.path.exists(self.solver_json):
             os.remove(self.solver_json)
 
