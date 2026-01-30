@@ -4,3 +4,4 @@
 allocator_weights:
   Q: [1.0, 1.0, 1.0, 1.0]   # Wrench tracking weights [F, Mx, My, Mz]
   R: 1e-7                    # Regularization weight (scalar)
+  dt: 0.01                   # Time step for prediction [s]

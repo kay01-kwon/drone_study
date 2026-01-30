@@ -86,6 +86,7 @@ def get_allocator_params(config):
     allocator_params = {
         'Q': np.array([float(q) for q in config['allocator_weights']['Q']]),
         'R': float(config['allocator_weights']['R']),
+        'dt': float(config['allocator_weights']['dt']),
     }
     return allocator_params
 
