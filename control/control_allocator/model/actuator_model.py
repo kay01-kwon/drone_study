@@ -23,7 +23,7 @@ class ActuatorModel:
 
         # Acceleration and jerk constraint
         self.alpha_max = RotorParams['alpha_rotor_max']
-        self.j_max = RotorParams['j_rotor_max']
+        self.j_max = RotorParams['jerk_rotor_max']
 
         # Rotor State
         self.w = cs.MX.sym('w', 6)
