@@ -95,8 +95,10 @@ class ActuatorOCP:
         x_lb = np.concatenate([w_lb, alpha_lb])
         x_ub = np.concatenate([w_ub, alpha_ub])
 
-        # Initial state constraint using x0 (equality constraint)
-        self.ocp.constraints.x0 = np.zeros(nx)
+        # Initial state constraint (lbx_0 = ubx_0 for equality, updated at runtime)
+        self.ocp.constraints.lbx_0 = np.zeros(nx)
+        self.ocp.constraints.ubx_0 = np.zeros(nx)
+        self.ocp.constraints.idxbx_0 = np.arange(nx)
 
         # Terminal state constraints
         self.ocp.constraints.lbx_e = x_lb
@@ -144,7 +146,11 @@ class ActuatorOCP:
         :param s_rotor: Current rotor state [w(6), alpha(6)] (12D)
         :return: (status, j_opt) - solver status and optimal jerk (6D)
         """
-        # Set initial state (x0 equality constraint)
+        # Set initial state constraint (equality: lbx_0 = ubx_0 = s_rotor)
+        self.ocp_solver.constraints_set(0, 'lbx', s_rotor)
+        self.ocp_solver.constraints_set(0, 'ubx', s_rotor)
+
+        # Set initial guess for state
         self.ocp_solver.set(0, 'x', s_rotor)
 
         # Set terminal reference (wrench_des)
