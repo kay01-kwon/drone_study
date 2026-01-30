@@ -90,17 +90,18 @@ class ActuatorOCP:
         alpha_lb = -self.alpha_max * np.ones(6)
         alpha_ub = self.alpha_max * np.ones(6)
 
-        self.ocp.constraints.lbx = np.concatenate([w_lb, alpha_lb])
-        self.ocp.constraints.ubx = np.concatenate([w_ub, alpha_ub])
-        self.ocp.constraints.idxbx = np.arange(nx)
+        x_lb = np.concatenate([w_lb, alpha_lb])
+        x_ub = np.concatenate([w_ub, alpha_ub])
 
-        # Terminal state constraints (same as stage)
-        self.ocp.constraints.lbx_e = np.concatenate([w_lb, alpha_lb])
-        self.ocp.constraints.ubx_e = np.concatenate([w_ub, alpha_ub])
+        # Initial state constraint (will be updated in solve)
+        self.ocp.constraints.lbx_0 = np.zeros(nx)
+        self.ocp.constraints.ubx_0 = np.zeros(nx)
+        self.ocp.constraints.idxbx_0 = np.arange(nx)
+
+        # Terminal state constraints
+        self.ocp.constraints.lbx_e = x_lb
+        self.ocp.constraints.ubx_e = x_ub
         self.ocp.constraints.idxbx_e = np.arange(nx)
-
-        # Initial state (will be set in solve)
-        self.ocp.constraints.x0 = np.zeros(nx)
 
         # Solver options
         self.ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
@@ -134,8 +135,8 @@ class ActuatorOCP:
         :return: (status, j_opt) - solver status and optimal jerk (6D)
         """
         # Set initial state constraint
-        self.ocp_solver.set(0, 'lbx', s_rotor)
-        self.ocp_solver.set(0, 'ubx', s_rotor)
+        self.ocp_solver.constraints_set(0, 'lbx', s_rotor)
+        self.ocp_solver.constraints_set(0, 'ubx', s_rotor)
 
         # Set terminal reference (wrench_des)
         self.ocp_solver.set(1, 'yref', wrench_des)
