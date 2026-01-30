@@ -81,6 +81,8 @@ class ActuatorAwareAllocator:
 
         if res.success:
             self.last_w_cmd = res.x
+            if res.fun > 0.001:
+                print(res.fun)
             return res.x
         else:
             print('Optimization failed')
