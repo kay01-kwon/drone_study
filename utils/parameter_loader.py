@@ -35,7 +35,7 @@ def load_parameters(control_type, dob_type):
     params['sim_params'] = yaml_loader.get_sim_params(config_sim)
 
     # 2. Load NOMINAL and control related parameters from control config (used for controller AND DOB)
-    if control_type == 'nmpc' or control_type == 'nmpc_actuator':
+    if control_type == 'nmpc':
         config_control = yaml_loader.load_yaml('config/control/nmpc/nmpc_params.yaml')
         params['nmpc_params'] = yaml_loader.get_nmpc_params(config_control)
 
@@ -44,12 +44,8 @@ def load_parameters(control_type, dob_type):
         params['nominal_drone_params'] = yaml_loader.get_drone_params(config_control)
         params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
 
-        if control_type == 'nmpc_actuator':
-            config_alloc = yaml_loader.load_yaml('config/control/allocator/allocator.yaml')
-            params['allocator_weights'] = yaml_loader.get_allocator_params(config_alloc)
 
-
-    elif control_type == "pd" or control_type == "pd_actuator":
+    elif control_type == "pd":
         config_control = yaml_loader.load_yaml('config/control/pd/pd_params.yaml')
         params['gain_params'] = yaml_loader.get_pd_gain_params(config_control)
 
@@ -57,10 +53,6 @@ def load_parameters(control_type, dob_type):
         params['nominal_dynamic_params'] = yaml_loader.get_dynamic_params(config_control)
         params['nominal_drone_params'] = yaml_loader.get_drone_params(config_control)
         params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
-
-        if control_type == 'pd_actuator':
-            config_alloc = yaml_loader.load_yaml('config/control/allocator/allocator.yaml')
-            params['allocator_weights'] = yaml_loader.get_allocator_params(config_alloc)
 
     # 3. Load DOB-specific parameters (DOB will use nominal params from control config)
     if dob_type == "hgdo":
