@@ -5,9 +5,7 @@ Supports multiple control methods, disturbance observers and dynamic parameter e
 
 Control types:
 - nmpc: NMPC compensation DOB
-- nmpc_actuator: NMPC compensation DOB + actuator aware control allocation
 - pd: Geometric control
-- pd_actuator: Geometric control + actuator aware control allocation
 
 DOB types:
 - none: No disturbance observer
@@ -15,8 +13,8 @@ DOB types:
 - l1: L1 Adaptation
 
 Examples:
-    python3 main_control.py --control nmpc_comp --dob none
-    python3 main_control.py --control nmpc_actuator --dob hgdo
+    python3 main_control.py --control nmpc --dob none
+    python3 main_control.py --control nmpc --dob l1
     python3 main_control.py --control pd --dob hgdo
 
 Author: Geonwoo Kwon
@@ -46,14 +44,14 @@ def main():
         epilog="""
     Examples:
         python3 main_control.py --control nmpc --dob none
-        python3 main_control.py --control nmpc_actuator --dob hgdo
+        python3 main_control.py --control nmpc --dob hgdo
         python3 main_control.py --control nmpc --dob l1
         python3 main_control.py --control pd --dob hgdo
         """
     )
 
     parser.add_argument('--control', type=str, default='nmpc',
-                       choices=['nmpc', 'nmpc_actuator', 'pd', 'pd_actuator'],
+                       choices=['nmpc', 'pd'],
                        help='Control method: nmpc (DOB Compensation), pd (Geometric)')
 
     parser.add_argument('--dob', type=str, default='l1',
@@ -97,11 +95,6 @@ def main():
                                                     DroneParam=params['nominal_drone_params'],
                                                     RotorParam=params['nominal_rotor_params'],
                                                     RlsParam=params['rls_params'])
-    if control_type == 'nmpc_actuator' or control_type == 'pd_actuator':
-        from control.control_allocator.ocp.actuator_ocp import ActuatorOCP
-        control_allocator = ActuatorOCP(DroneParams=params['nominal_drone_params'],
-                                        RotorParams=params['nominal_rotor_params'],
-                                        AllocParams=params['allocator_weights'])
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
@@ -226,36 +219,9 @@ def main():
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t = {t_sim[i]:.2f}s")
 
-        elif control_type == 'nmpc_actuator':
-            # NMPC gives desired rotor speeds -> convert to wrench -> allocate with actuator dynamics
-            status, w_cmd_nmpc = controller.solve_for_trajectory(s_feedback, t_sim[i])
-
-            # Convert NMPC output to wrench
-            u_des = hexa_converter.compute_u(w_cmd_nmpc)
-
-            # DOB compensation
-            if dob is not None:
-                u_d_match = np.array([d_est[2], d_est[3], d_est[4], d_est[5]])
-                u_des = u_des - u_d_match
-
-            # Actuator-aware allocation using acados OCP
-            status_alloc, j_opt = control_allocator.solve(u_des, s_rotor)
-            w_cmd = control_allocator.compute_w_cmd(s_rotor, j_opt)
-
-            if status != 0 and i % 100 == 0:
-                print(f"Warning: NMPC solver status {status} at t = {t_sim[i]:.2f}s")
-            if status_alloc != 0 and i % 100 == 0:
-                print(f"Warning: Allocator solver status {status_alloc} at t = {t_sim[i]:.2f}s")
-
         elif control_type == 'pd':
             u = controller.compute_u(s_feedback, ref, d_est)
             w_cmd = hexa_converter.compute_des_rotor_speed(u)
-
-        elif control_type == 'pd_actuator':
-            u_des = controller.compute_u(s_feedback, ref, d_est)
-            # Actuator-aware allocation using acados OCP
-            status_alloc, j_opt = control_allocator.solve(u_des, s_rotor)
-            w_cmd = control_allocator.compute_w_cmd(s_rotor, j_opt)
 
         # Simulation step
         t_ode = [t_sim[i], t_sim[i+1]]
@@ -305,14 +271,9 @@ def main():
                      params['true_dynamic_params'])
 
     # Cleanup for NMPC
-    if control_type in ('nmpc', 'nmpc_actuator'):
+    if control_type in ('nmpc'):
         from utils.acados_cleanup import cleanup_acados_files
         cleanup_acados_files(controller.get_json_file_name())
-
-    # Cleanup for ActuatorOCP allocator
-    if control_type in ('nmpc_actuator', 'pd_actuator'):
-        from utils.acados_cleanup import cleanup_acados_files
-        cleanup_acados_files(control_allocator.get_json_file_name())
 
 
 
