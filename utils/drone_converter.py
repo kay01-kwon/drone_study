@@ -37,7 +37,7 @@ class HexaConverter:
             self._precompute_rotor_pos(k_m, Dim)
 
             self.Kinv = np.zeros((3,2))
-            self.Kinv = np.linalg.inv(self.Kf)
+            self.Kinv = np.linalg.pinv(self.Kf)
 
 
     def _precompute_rotor_pos(self, k_m, Dim = 6):

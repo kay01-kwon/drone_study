@@ -32,8 +32,8 @@ def state_initialize(idle_rotor_speed, initial_offset = None, Dim = 6):
             p = np.array([0.0, 0.258])
 
         v = np.zeros((2,))
-        theta = 0.0
-        q = 0.0
+        theta = np.zeros((1,))
+        q = np.zeros((1,))
         s_drone = np.concatenate([p, v, theta, q])
 
         w_rotor = idle_rotor_speed * np.ones((3,))

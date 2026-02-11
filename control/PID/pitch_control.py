@@ -19,22 +19,22 @@ class PitchControl:
         self.DobMode = DobMode
 
         # Position gain load
-        Kp_x = DynamicParams['KpPosArray'][0]
-        Kp_z = DynamicParams['KpPosArray'][2]
+        Kp_x = GainParams['KpPosArray'][0]
+        Kp_z = GainParams['KpPosArray'][2]
         Kp_array = np.array([Kp_x, Kp_z])
         self.Kp_pos = np.diag(Kp_array)
 
         if self.DobMode is False:
-            Ki_x = DynamicParams['KiPosArray'][0]
-            Ki_z = DynamicParams['KiPosArray'][2]
+            Ki_x = GainParams['KiPosArray'][0]
+            Ki_z = GainParams['KiPosArray'][2]
             Ki_array = np.array([Ki_x, Ki_z])
             self.Ki_pos = np.diag(Ki_array)
             self.I_trans_limit = np.array([GainParams['ITransLimit'][0],
                                            GainParams['ITransLimit'][1]])
             self.I_trans = np.zeros((2,))
 
-        Kd_x = DynamicParams['KdPosArray'][0]
-        Kd_z = DynamicParams['KdPosArray'][2]
+        Kd_x = GainParams['KdPosArray'][0]
+        Kd_z = GainParams['KdPosArray'][2]
         Kd_array = np.array([Kd_x, Kd_z])
         self.Kd_pos = np.diag(Kd_array)
 

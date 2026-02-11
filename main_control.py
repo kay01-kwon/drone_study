@@ -18,7 +18,7 @@ Examples:
     python3 main_control.py --control pd --dob hgdo
 
 Author: Geonwoo Kwon
-Date: 2025-01-16
+Date: 2026-01-16
 """
 
 import numpy as np
