@@ -108,6 +108,7 @@ def get_regulation_params(config):
 def get_sim_params(config):
     sim_params = {
         'w_rotor_idle': config['simulation']['w_rotor_idle'],
+        'initial_pos': config['simulation']['initial_pos'],
         'tf': config['simulation']['tf'],
         'dt': config['simulation']['dt']
     }

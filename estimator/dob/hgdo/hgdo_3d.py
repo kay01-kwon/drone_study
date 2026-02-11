@@ -26,7 +26,7 @@ class HGDO3D:
         self.q = 0.0
 
         g = 9.81
-        self.g_vec = np.array([0.0, 0.0, -g])
+        self.g_vec = np.array([0.0, -g])
 
         self.hexa_converter = HexaConverter(DroneParams = drone_param,
                                             RotorParams = rotor_param,
@@ -45,6 +45,9 @@ class HGDO3D:
 
         # Update pitch
         self.th = th
+
+        # Update linear and angular velocity
+        self.v_world = v_world
         self.q = q
 
         # Get total thrust and moment
@@ -61,9 +64,9 @@ class HGDO3D:
         # Get translational disturbance
         f_ext_w = self.m * (self.gamma_trans + 1.0/self.eps_f*self.v_world)
         R_WB = pitch_to_rotm(th)
-        f_ext = R_WB * f_ext_w
+        f_ext = R_WB @ f_ext_w
 
-        tau_ext = np.array([self.Jyy * (self.gamma_rot + 1.0/self.eps_tau*self.q)])
+        tau_ext = [self.Jyy * (self.gamma_rot + 1.0/self.eps_tau*self.q)]
 
         return np.concatenate([f_ext, tau_ext])
 

@@ -25,7 +25,6 @@ from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
 from utils.custom_ode import custom_rk4
 
-
 def load_parameters_3d(dob_type):
     """Load parameters for 3DOF simulation"""
     params = {}
@@ -51,7 +50,6 @@ def load_parameters_3d(dob_type):
 
     return params
 
-
 def setup_controller_3d(dob_type, params):
     """Setup controller and DOB for 3DOF"""
     from control.PID.pitch_control import PitchControl
@@ -70,7 +68,6 @@ def setup_controller_3d(dob_type, params):
                      DobParams=params['dob_params'])
 
     return controller, dob
-
 
 def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
     """Plot results for 3DOF simulation"""
@@ -126,7 +123,7 @@ def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
     axes[2, 1].grid(True)
 
     plt.tight_layout()
-    plt.savefig('results_3d.png', dpi=150)
+    plt.savefig('results_3d.png', dpi=300)
     plt.show()
 
 
@@ -174,7 +171,11 @@ def main():
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
-    s_drone, s_rotor = state_initialize(w_rotor_idle, Dim=3)
+    com_offset = params['true_dynamic_params']['com_offset']
+    x_init = params['sim_params']['initial_pos'][0]
+    z_init = params['sim_params']['initial_pos'][1]
+    initial_pos = np.array([x_init + com_offset[0], z_init + com_offset[1]])
+    s_drone, s_rotor = state_initialize(w_rotor_idle, initial_pos, Dim=3)
 
     # Simulation parameters
     tf = params['sim_params']['tf']

@@ -27,4 +27,4 @@ gain_params:
   KdOriArray: [10.5, 10.5, 1.0]  # Orientation derivative gain (increased damping)
   KiOriArray: [0.01, 0.01, 0.01]  # Orientation integral gain
   IOriLimit: [1.0, 1.0, 1.0]  # Orientation integral limit
-  AccelMax: [0.5, 0.5, 20.0]  # Maximum acceleration [m/s^2]
+  AccelMax: [0.5, 20.0]  # Maximum acceleration [m/s^2]
