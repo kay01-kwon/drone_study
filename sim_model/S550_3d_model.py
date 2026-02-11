@@ -113,9 +113,6 @@ class S550_3D_Sim_Model:
 
         sdot = self._flight_dynamics(state, u)
 
-        # if self.is_contact == True:
-        #     print('N_f: ', self.N_f, 'N_b: ', self.N_b)
-
         # Check Near zero pitch condition
         if np.abs(theta) <= 0.1*np.pi/180.0 and self.is_contact == True:
             # Compute normal force at near zero pitch
@@ -145,7 +142,6 @@ class S550_3D_Sim_Model:
 
         elif self.is_contact == False:
             sdot = self._flight_dynamics(state, u)
-            # print('No contact')
 
         return sdot
 
