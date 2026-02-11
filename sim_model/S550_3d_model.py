@@ -69,6 +69,8 @@ class S550_3D_Sim_Model:
         self.e1 = np.array([1.0, 0.0])
         self.e2 = np.array([0, 1.0])
 
+        self.is_contact = True
+
     def pack_state(self, p, v, theta, q):
         """Pack state into vector (6 dim)"""
         return np.concatenate([p, v, [theta], [q]])
@@ -112,13 +114,16 @@ class S550_3D_Sim_Model:
         sdot = self._flight_dynamics(state, u)
 
         # Check Near zero pitch condition
-        if np.abs(theta) <= 0.1*np.pi/180.0:
+        if np.abs(theta) <= 0.1*np.pi/180.0 and self.is_contact == True:
             # Compute normal force at near zero pitch
             self._compute_Normal_force(u)
+
+            print('N_f: ',self.N_f, 'N_b: ',self.N_b)
 
             # Flight condition
             if self.N_f <= 0.0 and self.N_b <= 0.0:
                 sdot = self._flight_dynamics(state, u)
+                self.is_contact = False
             # Front contact condition
             elif self.N_b <= 0.0 and self.N_f > 0:
                 sdot = self._front_dynamics(state, u)
@@ -126,11 +131,18 @@ class S550_3D_Sim_Model:
             elif self.N_f <= 0.0 and self.N_b > 0:
                 sdot = self._rear_dynamics(state, u)
 
-        else:
+            elif self.N_f > 0 and self.N_b > 0:
+                sdot = np.array([0.0, 0.0,
+                                 0.0, 0.0,
+                                 0.0, 0.0])
+
+        elif np.abs(theta) > 0.1*np.pi/180.0 and self.is_contact == True:
             if theta > 0.0:
                 sdot = self._front_dynamics(state, u)
             elif theta < 0.0:
                 sdot = self._rear_dynamics(state, u)
+        elif self.is_contact == False:
+            sdot = self._flight_dynamics(state, u)
 
         return sdot
 
@@ -165,19 +177,22 @@ class S550_3D_Sim_Model:
         return self.pack_state(dpdt, dvdt, dthdt, dqdt)
 
     def _front_dynamics(self, state, u):
-
         # Unpack state and control input
+
         p, v_world, theta, q = self._unpack_state(state)
         f, My = self._unpack_control_input(u)
         R = pitch_to_rotm(theta)
 
-        fx = f*R@self.e1
-        fz = f*R@self.e2
+        W_f = f * R @ self.e2
+        fx = W_f[0]
+        fz = W_f[1]
+
         self.N_f = self.m * self.g - fz
 
         # Flight condition
         if self.N_f <= 0.0:
             sdot = self._flight_dynamics(state, u)
+            self.is_contact = False
         # Front contact condition
         else:
             # Static friction assumption
@@ -206,13 +221,16 @@ class S550_3D_Sim_Model:
         f, My = self._unpack_control_input(u)
         R = pitch_to_rotm(theta)
 
-        fx = f * R @ self.e1
-        fz = f * R @ self.e2
+        W_f = f * R @ self.e2
+        fx = W_f[0]
+        fz = W_f[1]
+
         self.N_f = self.m * self.g - fz
 
         # Flight condition
         if self.N_b <= 0.0:
             sdot = self._flight_dynamics(state, u)
+            self.is_contact = False
         # Rear contact condition
         else:
             # Static friction assumption
@@ -231,6 +249,7 @@ class S550_3D_Sim_Model:
                                                 np.sin(theta + self.delta_f)])
                     + self.r_b * (q ** 2) * np.array([-np.sin(theta + self.delta_f),
                                                       -np.cos(theta + self.delta_f)]))
+
             sdot = self.pack_state(dpdt, dvdt, dthdt, dqdt)
         return sdot
 
@@ -247,7 +266,7 @@ class S550_3D_Sim_Model:
         R = pitch_to_rotm(theta)
         B_p_offset = np.array([self.x_off, self.z_off])
         W_p_offset = R @ B_p_offset
-        W_p_B = W_p_CM - W_p_offset - np.array([0.0, -self.h_g])
+        W_p_B = W_p_CM - W_p_offset - np.array([0.0, self.h_g])
         W_v_B = W_v_CM - R_Omega_x @ B_p_offset
         B_v_B = R.T @ W_v_B
 

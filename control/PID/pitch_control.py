@@ -14,7 +14,7 @@ class PitchControl:
         self.Jyy = DynamicParams['MoiArray'][1]
 
         g = 9.81
-        self.g_vec = np.array([0.0, 0.0, -g])
+        self.g_vec = np.array([0.0, -g])
 
         self.DobMode = DobMode
 
@@ -113,14 +113,14 @@ class PitchControl:
             self.I_pitch += dt*th_err
             # Anti wind for I_pitch
             self.I_pitch = np.clip(self.I_pitch, self.I_pitch_limit, self.I_pitch_limit)
-            angular_accelCmd = (-self.Kp_pitch @ th_err
-                                -self.Kd_pitch @ q_err
-                                -self.Ki_pitch @ self.I_trans)
+            angular_accelCmd = (-self.Kp_pitch * th_err
+                                -self.Kd_pitch * q_err
+                                -self.Ki_pitch * self.I_trans)
             M_control = self.Jyy * angular_accelCmd
 
         else:
-            angular_accelCmd = (-self.Kp_pitch @ th_err
-                                - self.Kd_pitch @ q_err)
+            angular_accelCmd = (-self.Kp_pitch * th_err
+                                - self.Kd_pitch * q_err)
             M_control = self.Jyy * angular_accelCmd - tau_ext
 
         self.u[1] = M_control
@@ -143,5 +143,5 @@ class PitchControl:
     def _unpack_disturbance(self, d):
         """Unpack a disturbance from disturbance vector"""
         f_ext = d[0:2]
-        tau_ext = d[3]
+        tau_ext = d[2]
         return f_ext, tau_ext
