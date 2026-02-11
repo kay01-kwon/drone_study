@@ -113,12 +113,13 @@ class S550_3D_Sim_Model:
 
         sdot = self._flight_dynamics(state, u)
 
+        # if self.is_contact == True:
+        #     print('N_f: ', self.N_f, 'N_b: ', self.N_b)
+
         # Check Near zero pitch condition
         if np.abs(theta) <= 0.1*np.pi/180.0 and self.is_contact == True:
             # Compute normal force at near zero pitch
             self._compute_Normal_force(u)
-
-            print('N_f: ',self.N_f, 'N_b: ',self.N_b)
 
             # Flight condition
             if self.N_f <= 0.0 and self.N_b <= 0.0:
@@ -141,8 +142,10 @@ class S550_3D_Sim_Model:
                 sdot = self._front_dynamics(state, u)
             elif theta < 0.0:
                 sdot = self._rear_dynamics(state, u)
+
         elif self.is_contact == False:
             sdot = self._flight_dynamics(state, u)
+            # print('No contact')
 
         return sdot
 
@@ -177,6 +180,7 @@ class S550_3D_Sim_Model:
         return self.pack_state(dpdt, dvdt, dthdt, dqdt)
 
     def _front_dynamics(self, state, u):
+        print('Front dynamics')
         # Unpack state and control input
 
         p, v_world, theta, q = self._unpack_state(state)
@@ -203,7 +207,7 @@ class S550_3D_Sim_Model:
                          +(self.N_f*sth + f_fric*cth)*(self.h_g + self.z_off))
 
             dthdt = q
-            dqdt = 1.0/self.Jyy_f * (My + self.x_off + M_contact)
+            dqdt = 1.0/self.Jyy_f * (My + self.x_off*f + M_contact)
 
             dpdt = self.r_f * q * np.array([np.cos(theta - self.delta_f),
                                             -np.sin(theta - self.delta_f)])
@@ -215,7 +219,7 @@ class S550_3D_Sim_Model:
         return sdot
 
     def _rear_dynamics(self, state, u):
-
+        print('Rear dynamics')
         # Unpack state and control input
         p, v_world, theta, q = self._unpack_state(state)
         f, My = self._unpack_control_input(u)
@@ -225,7 +229,7 @@ class S550_3D_Sim_Model:
         fx = W_f[0]
         fz = W_f[1]
 
-        self.N_f = self.m * self.g - fz
+        self.N_b = self.m * self.g - fz
 
         # Flight condition
         if self.N_b <= 0.0:
@@ -241,14 +245,14 @@ class S550_3D_Sim_Model:
                          + (self.N_b * sth - f_fric * cth) * (self.h_g + self.z_off))
 
             dthdt = q
-            dqdt = 1.0 / self.Jyy_f * (My + self.x_off + M_contact)
+            dqdt = 1.0 / self.Jyy_b * (My + self.x_off*f + M_contact)
 
-            dpdt = self.r_b * q * np.array([-np.cos(theta + self.delta_f),
-                                            np.sin(theta + self.delta_f)])
-            dvdt = (self.r_b * dqdt * np.array([-np.cos(theta + self.delta_f),
-                                                np.sin(theta + self.delta_f)])
-                    + self.r_b * (q ** 2) * np.array([-np.sin(theta + self.delta_f),
-                                                      -np.cos(theta + self.delta_f)]))
+            dpdt = self.r_b * q * np.array([-np.cos(theta + self.delta_b),
+                                            np.sin(theta + self.delta_b)])
+            dvdt = (self.r_b * dqdt * np.array([-np.cos(theta + self.delta_b),
+                                                np.sin(theta + self.delta_b)])
+                    + self.r_b * (q ** 2) * np.array([-np.sin(theta + self.delta_b),
+                                                      -np.cos(theta + self.delta_b)]))
 
             sdot = self.pack_state(dpdt, dvdt, dthdt, dqdt)
         return sdot

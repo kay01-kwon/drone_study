@@ -203,7 +203,7 @@ def main():
     tau_est_hist = []
 
     # Reference: simple hover at z=1.0
-    p_des = np.array([0.0, 1.0])  # x, z
+    p_des = np.array([0.0, 0.5])  # x, z
     v_des = np.array([0.0, 0.0])  # vx, vz
     ref = np.concatenate([p_des, v_des])
 
@@ -269,7 +269,10 @@ def main():
                                      s_drone, u_actual, t_ode)
 
         # Print progress
-        if i % 1000 == 0:
+        # if i % 100 == 0:
+        #     print(f"t={t_sim[i]:.2f}s, z={p[1]:.3f}m, pitch={np.rad2deg(theta):.2f}deg, "
+        #           f"w_rotor=[{w_rotor[0]:.0f}, {w_rotor[1]:.0f}, {w_rotor[2]:.0f}]")
+        if i < 100:
             print(f"t={t_sim[i]:.2f}s, z={p[1]:.3f}m, pitch={np.rad2deg(theta):.2f}deg, "
                   f"w_rotor=[{w_rotor[0]:.0f}, {w_rotor[1]:.0f}, {w_rotor[2]:.0f}]")
 
