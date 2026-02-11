@@ -11,7 +11,7 @@ Now all functionality is **unified into a single `main_control.py`** with:
 
 ```bash
 # NMPC trajectory tracking without DOB (default)
-python3 main_control.py --control nmpc_comp --dob none
+python3 main_control.py --control nmpc --dob none
 
 # PD control with HGDO (High Gain Disturbance Observer)
 python3 main_control.py --control pd --dob hgdo
@@ -23,14 +23,13 @@ python3 main_control.py --control pd --dob l1
 python3 main_control.py --control pd --dob none
 
 # NMPC_param with DOB (unusual but supported)
-python3 main_control.py --control nmpc_param --dob hgdo
+python3 main_control.py --control nmpc --dob hgdo
 ```
 
 ### Arguments
 
 - `--control {nmpc, pd}`: Control method
-  - `nmpc_comp`: Nonlinear Model Predictive Control (Direct compensation with DOB)
-  - `nmpc_param`: Nonlinear Model Predictive Control (Dynamic paramter feedback)
+  - `nmpc`: Nonlinear Model Predictive Control (Direct compensation with DOB)
   - `pd`: Geometric Control
 
 - `--dob {none, hgdo, l1}`: Disturbance observer type
