@@ -1,0 +1,24 @@
+# Drone Simulation Parameters
+
+dynamic_params:
+  m: 3.0  # Mass [kg]
+  MoiArray: [0.065, 0.065, 0.10]  # Moment of inertia [kg*m^2]
+  com_offset: [-0.0105, -0.00, 0.0]  # Center of mass offset [m]
+
+drone_params:
+  arm_length: 0.265  # Arm length [m]
+  motor_const: 1.465e-7  # Motor thrust constant
+  moment_const: 0.01569  # Motor moment constant
+
+rotor_params:
+  p: [25.16687, 0.003933, 515.605]  # Rotor model parameters
+  w_rotor_min: 2000  # Minimum rotor speed [RPM]
+  w_rotor_max: 7200  # Maximum rotor speed [RPM]
+  alpha_rotor_max: 15000  # Maximum rotor acceleration [RPM/s]
+  jerk_rotor_max: 250000  # Maximum rotor jerk [RPM/s^2]
+  num_rotors: 3  # Number of rotors
+
+simulation:
+  w_rotor_idle: 2000.0  # Idle rotor speed [RPM]
+  tf: 100.0  # Final time [s]
+  dt: 0.010  # Time step [s]

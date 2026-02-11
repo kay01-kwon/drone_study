@@ -68,8 +68,8 @@ class HexaConverter:
             ])
         elif Dim == 3:
             self.Kf = np.array([
-                [1.0, 1.0, 1.0],
-                [-self.l*sin_pi_3, 0.0, self.l*sin_pi_3]
+                [2.0, 2.0, 2.0],
+                [-2*self.l*sin_pi_3, 0.0, 2*self.l*sin_pi_3]
             ])
 
     def compute_u(self, w_cmd):
