@@ -57,9 +57,9 @@ class S550_3D_Sim_Model:
 
         self.delta_b = np.arctan2(self.x_g/2.0 + self.x_off,
                                   self.h_g + self.z_off)
-        # Gravity
+        # Gravity (2D: x, z)
         self.g = 9.81
-        self.g_vec = np.array([0, 0, -self.g])
+        self.g_vec = np.array([0, -self.g])
 
         # Normal force info (No thrust)
         self.N_f = self.m * self.g / 2.0
@@ -71,7 +71,7 @@ class S550_3D_Sim_Model:
 
     def pack_state(self, p, v, theta, q):
         """Pack state into vector (6 dim)"""
-        return np.concatenate([p, v, theta, q])
+        return np.concatenate([p, v, [theta], [q]])
 
     def _unpack_state(self, state):
         """
@@ -251,4 +251,4 @@ class S550_3D_Sim_Model:
         W_v_B = W_v_CM - R_Omega_x @ B_p_offset
         B_v_B = R.T @ W_v_B
 
-        return np.concatenate([W_p_B, B_v_B, theta, q])
+        return np.concatenate([W_p_B, B_v_B, [theta], [q]])
