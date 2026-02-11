@@ -37,6 +37,18 @@ def quaternion_to_rotm(q):
 
     return R
 
+def pitch_to_rotm(th):
+    """
+    Convert pitch to rotation matrix (body to world)
+    :param th: Pitch
+    :return: Rotation matrix
+    """
+    cth = np.cos(th)
+    sth = np.sin(th)
+    rotm = np.array([[cth, sth],
+                     [-sth, cth]])
+    return rotm
+
 def quaternion_to_euler(q):
     """
     Convert quaternion to Euler angles (roll, pitch, yaw)

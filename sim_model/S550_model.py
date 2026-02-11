@@ -68,7 +68,17 @@ class S550_Sim_Model:
         p = s[0:3]
         v_world = s[3:6]
         q = s[6:10]
+        R = quaternion_to_rotm(q)
+        v_body = R @ v_world
         w = s[10:13]
+        return p, v_body, q, w
+
+    def _unpack_state_world(self, state):
+        """Unpack state from world frame"""
+        p = state[0:3]
+        v_world = state[3:6]
+        q = state[6:10]
+        w = state[10:13]
         return p, v_world, q, w
 
     def pack_control_input(self,f,M):
@@ -91,7 +101,7 @@ class S550_Sim_Model:
         """
 
         # Unpack state and control input
-        p, v_world, q, w = self.unpack_state(s)
+        p, v_world, q, w = self._unpack_state_world(s)
         # Normalize quaternion
         q = q/np.linalg.norm(q,2)
         f, M = self.unpack_control_input(u)
