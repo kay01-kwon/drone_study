@@ -64,7 +64,7 @@ class HGDO3D:
         # Get translational disturbance
         f_ext_w = self.m * (self.gamma_trans + 1.0/self.eps_f*self.v_world)
         R_WB = pitch_to_rotm(th)
-        f_ext = R_WB @ f_ext_w
+        f_ext = R_WB.T @ f_ext_w
 
         tau_ext = [self.Jyy * (self.gamma_rot + 1.0/self.eps_tau*self.q)]
 
@@ -88,9 +88,9 @@ class HGDO3D:
 
         u_M = 1.0/self.Jyy * u[1]
 
-        gamma_rot = (-1.0/self.eps_tau*(gamma_rot + 1.0/self.eps_tau*self.q)
+        gamma_rot_dot = (-1.0/self.eps_tau*(gamma_rot + 1.0/self.eps_tau*self.q)
                      + 1.0/self.eps_tau*(-u_M))
-        return gamma_rot
+        return gamma_rot_dot
 
     def _unpack_state(self, state):
         """Unpack state from state vector"""
