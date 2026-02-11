@@ -21,5 +21,5 @@ rotor_params:
 simulation:
   initial_pos: [0.0, 0.258]
   w_rotor_idle: 2000.0  # Idle rotor speed [RPM]
-  tf: 100.0  # Final time [s]
+  tf: 1.0  # Final time [s]
   dt: 0.010  # Time step [s]
