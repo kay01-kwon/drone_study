@@ -9,9 +9,9 @@ from utils.math_tool import pitch_to_rotm
 from dataclasses import dataclass
 
 @dataclass
-class S550_2D_state:
+class S550_3D_state:
     """
-    State of S550 2D simulation
+    State of S550 3D simulation
     p - x, z
     v - vx, vz
     theta - pitch
@@ -22,7 +22,7 @@ class S550_2D_state:
     theta: float
     q: float
 
-class S550_2D_Sim_Model:
+class S550_3D_Sim_Model:
     """
     S550_2D_Sim_Model
     """
@@ -73,7 +73,7 @@ class S550_2D_Sim_Model:
         """Pack state into vector (6 dim)"""
         return np.concatenate([p, v, theta, q])
 
-    def unpack_state(self, state):
+    def _unpack_state(self, state):
         """
         Unpack state from vector
         p: x, z in the world frame
@@ -88,11 +88,11 @@ class S550_2D_Sim_Model:
         q = state[5]
         return p, v_world, theta, q
 
-    def pack_control_input(self, f, My):
+    def _pack_control_input(self, f, My):
         """Pack control input into vector (2 dim)"""
         return np.concatenate([f, My])
 
-    def unpack_control_input(self, u):
+    def _unpack_control_input(self, u):
         """Unpack control input from vector"""
         f = u[0]
         My = u[1]
@@ -136,7 +136,7 @@ class S550_2D_Sim_Model:
     def _compute_Normal_force(self, u):
 
         # Unpack control input
-        f, My = self.unpack_control_input(u)
+        f, My = self._unpack_control_input(u)
 
         # Front normal force
         self.N_f = (self.m * self.g * (0.5 + self.x_off/self.x_g)
@@ -151,22 +151,22 @@ class S550_2D_Sim_Model:
         No contact condition --> Flight!
         """
         # Unpack state and control input
-        p, v_world, theta, q = self.unpack_state(state)
-        f, My = self.unpack_control_input(u)
+        p, v_world, theta, q = self._unpack_state(state)
+        f, My = self._unpack_control_input(u)
         R = pitch_to_rotm(theta)
 
         dpdt = v_world
         dvdt = f/self.m*R@self.e2 + self.g_vec
         dthdt = q
-        dqdt = 1/self.Jyy*(My + self.x_off*self.f)
+        dqdt = 1/self.Jyy*(My + self.x_off*f)
 
         return self.pack_state(dpdt, dvdt, dthdt, dqdt)
 
     def _front_dynamics(self, state, u):
 
         # Unpack state and control input
-        p, v_world, theta, q = self.unpack_state(state)
-        f, My = self.unpack_control_input(u)
+        p, v_world, theta, q = self._unpack_state(state)
+        f, My = self._unpack_control_input(u)
         R = pitch_to_rotm(theta)
 
         fx = f*R@self.e1
@@ -200,8 +200,8 @@ class S550_2D_Sim_Model:
     def _rear_dynamics(self, state, u):
 
         # Unpack state and control input
-        p, v_world, theta, q = self.unpack_state(state)
-        f, My = self.unpack_control_input(u)
+        p, v_world, theta, q = self._unpack_state(state)
+        f, My = self._unpack_control_input(u)
         R = pitch_to_rotm(theta)
 
         fx = f * R @ self.e1
@@ -231,3 +231,22 @@ class S550_2D_Sim_Model:
                                                       -np.cos(theta + self.delta_f)]))
             sdot = self.pack_state(dpdt, dvdt, dthdt, dqdt)
         return sdot
+
+    def get_state(self, state):
+        """Coordinate transformation from CM to Body"""
+        W_p_CM = state[0:2]
+        W_v_CM = state[2:4]
+        theta = state[4]
+        q = state[5]
+
+        R_Omega_x = q * np.array([[-np.sin(theta), np.cos(theta)],
+                                  [-np.cos(theta), -np.sin(theta)]])
+
+        R = pitch_to_rotm(theta)
+        B_p_offset = np.array([self.x_off, self.z_off])
+        W_p_offset = R @ B_p_offset
+        W_p_B = W_p_CM - W_p_offset - np.array([0.0, -self.h_g])
+        W_v_B = W_v_CM - R_Omega_x @ B_p_offset
+        B_v_B = R.T @ W_v_B
+
+        return np.concatenate([W_p_B, B_v_B, theta, q])

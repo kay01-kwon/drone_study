@@ -40,8 +40,8 @@ class RotorModel:
 
     def unpack_state(self, s_rotor):
         """Unpack rotor state into vector"""
-        w_rotor = s_rotor[0:6]
-        alpha_rotor = s_rotor[6:]
+        w_rotor = s_rotor[0:self.num_rotors]
+        alpha_rotor = s_rotor[self.num_rotors:]
         return w_rotor, alpha_rotor
 
     def dynamics(self, t, s_rotor, w_cmd):
@@ -55,9 +55,9 @@ class RotorModel:
 
         w_rotor, alpha_rotor = self.unpack_state(s_rotor)
 
-        jerk_phys = np.zeros((6,))
-        w_dot_eff = np.zeros((6,))
-        jerk_eff = np.zeros((6,))
+        jerk_phys = np.zeros((self.num_rotors,))
+        w_dot_eff = np.zeros((self.num_rotors,))
+        jerk_eff = np.zeros((self.num_rotors,))
 
         for i in range(self.num_rotors):
             # Clamp cmd value first
