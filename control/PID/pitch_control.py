@@ -98,13 +98,13 @@ class PitchControl:
         if self.DobMode is False:
             f_des = self.m * linear_accelCmd
         else:
-            f_des = self.m * linear_accelCmd - R_WB @ np.array([0.0, f_ext[1]])
+            f_des = self.m * linear_accelCmd - R_WB @ f_ext
 
         self.u[0] = f_des.dot(R_WB[:,1])
 
         b2 = linear_accelCmd/np.linalg.norm(linear_accelCmd)
 
-        th_des = np.arctan2(b2[1], b2[0])
+        th_des = np.arctan2(b2[0], b2[1])
 
         th_err = th - th_des
         q_err = q
