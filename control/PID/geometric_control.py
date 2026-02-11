@@ -68,7 +68,7 @@ class GeometricControl:
                      -self.Kd_pos @ v_err
                      -self.Ki_pos @ self.I_trans)
         else:
-            # Compute desired force vector (PID)
+            # Compute desired force vector (PD)
             linear_accelCmd =(-self.Kp_pos @ p_err
                               - self.Kd_pos @ v_err)
 

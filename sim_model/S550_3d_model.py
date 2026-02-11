@@ -109,6 +109,8 @@ class S550_3D_Sim_Model:
 
         theta = state[4]
 
+        sdot = self._flight_dynamics(state, u)
+
         # Check Near zero pitch condition
         if np.abs(theta) <= 0.1*np.pi/180.0:
             # Compute normal force at near zero pitch
