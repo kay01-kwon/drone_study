@@ -8,7 +8,7 @@ import numpy as np
 
 
 class HexaConverter:
-    def __init__(self, DroneParams, RotorParams):
+    def __init__(self, DroneParams, RotorParams, Dim = 6):
 
         # Get drone parameters
         self.l = DroneParams['arm_length']
@@ -23,41 +23,54 @@ class HexaConverter:
         self.T_min = self.C_T * w_min**2
         self.T_max = self.C_T * w_max**2
 
-        # Thrust [6] to u (f, M) [4]
-        self.Kf = np.zeros((4,6))
-        self._precompute_rotor_pos(k_m)
+        if Dim == 6:
+            # Thrust [6] to u (f, M) [4]
+            self.Kf = np.zeros((4,6))
+            self._precompute_rotor_pos(k_m, Dim)
 
-        # u [4] to rotor thrusts [6]
-        self.Kinv = np.zeros((6,4))
-        self.Kinv = np.linalg.pinv(self.Kf)
+            # u [4] to rotor thrusts [6]
+            self.Kinv = np.zeros((6,4))
+            self.Kinv = np.linalg.pinv(self.Kf)
+        elif Dim == 3:
+            # Thrust [3] to u (f, My) [2]
+            self.Kf = np.zeros((2, 3))
+            self._precompute_rotor_pos(k_m, Dim)
+
+            self.Kinv = np.zeros((3,2))
+            self.Kinv = np.linalg.inv(self.Kf)
 
 
-    def _precompute_rotor_pos(self, k_m):
+    def _precompute_rotor_pos(self, k_m, Dim = 6):
         cos_pi_3 = np.cos(np.pi/3)
         sin_pi_3 = np.sin(np.pi/3)
+        if Dim == 6:
+            y1 = self.l*cos_pi_3
+            y2 = self.l
+            y3 = self.l*cos_pi_3
 
-        y1 = self.l*cos_pi_3
-        y2 = self.l
-        y3 = self.l*cos_pi_3
+            y4 = -self.l*cos_pi_3
+            y5 = -self.l
+            y6 = -self.l*cos_pi_3
 
-        y4 = -self.l*cos_pi_3
-        y5 = -self.l
-        y6 = -self.l*cos_pi_3
+            x1 = self.l*sin_pi_3
+            x2 = 0
+            x3 = -self.l*sin_pi_3
 
-        x1 = self.l*sin_pi_3
-        x2 = 0
-        x3 = -self.l*sin_pi_3
+            x4 = -self.l*sin_pi_3
+            x5 = 0
+            x6 = self.l*sin_pi_3
 
-        x4 = -self.l*sin_pi_3
-        x5 = 0
-        x6 = self.l*sin_pi_3
-
-        self.Kf = np.array([
+            self.Kf = np.array([
             [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             [y1, y2, y3, y4, y5, y6],
             [-x1, -x2, -x3, -x4, -x5, -x6],
             [-k_m, k_m, -k_m, k_m, -k_m, k_m],
-        ])
+            ])
+        elif Dim == 3:
+            self.Kf = np.array([
+                [1.0, 1.0, 1.0],
+                [-self.l*sin_pi_3, 0.0, self.l*sin_pi_3]
+            ])
 
     def compute_u(self, w_cmd):
         """
@@ -85,7 +98,4 @@ class HexaConverter:
     def _clamp_thrusts(self, T_rotor):
         T_rotor_clamped = np.clip(T_rotor, self.T_min, self.T_max)
         return T_rotor_clamped
-
-
-
 

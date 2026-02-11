@@ -87,7 +87,8 @@ def main():
 
     rotor_sim_model = RotorModel(RotorParams=params['true_rotor_params'])
     hexa_converter = HexaConverter(DroneParams=params['true_drone_params'],
-                                   RotorParams=params['true_rotor_params'])
+                                   RotorParams=params['true_rotor_params'],
+                                   Dim=6)
 
     # Setup controller, DOB and RLS
     controller, dob = parameter_loader.setup_controller(control_type, dob_type, params)
@@ -101,7 +102,9 @@ def main():
 
     # Initialize at ground level (like Gazebo)
     initial_pos = [0.0, 0.0, 0.0]  # Ground level
-    s_drone, s_rotor = state_initialize(w_rotor_idle, initial_offset=initial_pos)
+    s_drone, s_rotor = state_initialize(w_rotor_idle,
+                                        initial_offset=initial_pos,
+                                        Dim=6)
 
     # Simulation parameters
     tf = params['sim_params']['tf']
