@@ -1,7 +1,0 @@
-# Allocator weights for ActuatorAwareAllocator
-# Drone and rotor params are loaded from nmpc/pd config files
-
-allocator_weights:
-  Q: [1.0, 100.0, 100.0, 50.0]   # Wrench tracking weights [F, Mx, My, Mz]
-  R: 1e-11                    # Regularization weight (scalar)
-  dt: 0.01                   # Time step for prediction [s]
