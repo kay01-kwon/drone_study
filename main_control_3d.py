@@ -202,12 +202,15 @@ def main():
     f_est_hist = []
     tau_est_hist = []
 
-    # Reference: simple hover at z=1.0
-    p_des = np.array([0.0, 0.5])  # x, z
-    v_des = np.array([0.0, 0.0])  # vx, vz
-    ref = np.concatenate([p_des, v_des])
+    # Reference trajectory:
+    # Phase 1 (0 ~ 10s): Takeoff and hover at z=0.5m
+    # Phase 2 (10 ~ 15s): Descend to z=0.0m (landing)
+    # Phase 3 (15 ~ 20s): Stay on ground
+    z_hover = 0.5
+    t_descend_start = 10.0
+    t_descend_end = 15.0
 
-    print(f"\nTarget position: x={p_des[0]:.2f}, z={p_des[1]:.2f} m")
+    print(f"\nTrajectory: hover at z={z_hover:.2f}m, descend at t={t_descend_start:.0f}s")
     print(f"Simulation time: {tf:.1f} s, dt: {dt*1000:.1f} ms\n")
 
     # Main simulation loop
@@ -222,6 +225,25 @@ def main():
         q = s_body[5]
 
         w_rotor, alpha_rotor = rotor_sim_model.unpack_state(s_rotor)
+
+        # Time-varying reference
+        t_now = t_sim[i]
+        if t_now < t_descend_start:
+            # Phase 1: hover
+            p_des = np.array([0.0, z_hover])
+            v_des = np.array([0.0, 0.0])
+        elif t_now < t_descend_end:
+            # Phase 2: linear descent from z_hover to 0
+            frac = (t_now - t_descend_start) / (t_descend_end - t_descend_start)
+            z_des = z_hover * (1.0 - frac)
+            vz_des = -z_hover / (t_descend_end - t_descend_start)
+            p_des = np.array([0.0, z_des])
+            v_des = np.array([0.0, vz_des])
+        else:
+            # Phase 3: on ground
+            p_des = np.array([0.0, 0.0])
+            v_des = np.array([0.0, 0.0])
+        ref = np.concatenate([p_des, v_des])
 
         # DOB estimate
         if dob is not None and i > 1:
@@ -267,6 +289,9 @@ def main():
         # Simulate drone dynamics
         s_drone = custom_rk4.do_step(drone_sim_model.dynamics,
                                      s_drone, u_actual, t_ode)
+
+        # Prevent ground penetration
+        s_drone = drone_sim_model.clamp_ground(s_drone)
 
         # Print progress
         if i % 1000 == 0:
