@@ -305,7 +305,7 @@ def main():
         target_2d = params['tracking_params']['target_position']
         if control_type == 'nmpc':
             controller.setup_tracking(params['tracking_params'], target_2d)
-        print(f"\nTracking: Hehn trajectory, replan at 10Hz")
+        print(f"\nTracking: Hehn trajectory, replan at 100Hz")
         print(f"  Target: {target_2d}")
 
     print(f"Simulation time: {tf:.1f} s, dt: {dt*1000:.1f} ms\n")
@@ -365,11 +365,12 @@ def main():
             else:
                 status, w_cmd = controller.solve(s_body, ref)
 
-            if dob is not None and t_now > 2.0:
+            if dob is not None:
                 # DOB compensation: subtract disturbance moment from NMPC output
                 # Delay compensation until DOB has converged (t > 2s)
                 u_mpc = hexa_converter.compute_u(w_cmd)
                 u_comp = u_mpc.copy()
+                u_comp[0] -= d_est[1]
                 u_comp[1] -= d_est[2]              # subtract tau_ext from My
                 w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
 
