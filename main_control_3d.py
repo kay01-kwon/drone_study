@@ -217,10 +217,7 @@ class TrajectoryManager:
 
         Replanning occurs if:
         1. Enough time has passed since last replan (replan_interval), AND
-        2. Trajectory is still active (not near end)
-
-        Note: We DON'T replan after trajectory ends to avoid discontinuous reference.
-        After trajectory ends, NMPC continues tracking the terminal reference (target).
+        2. Either: trajectory is still active, OR position error exceeds threshold
         """
         time_since_replan = t_now - self.last_replan_time
         if time_since_replan < self.replan_interval:
@@ -228,6 +225,13 @@ class TrajectoryManager:
 
         t_rel = t_now - self.t_start
         traj_active = t_rel < self.traj.duration - 0.5
+
+        # After trajectory ends, replan if position error is large
+        if not traj_active and current_pos is not None:
+            target_2d = self.target[[0, 2]]  # [x, z]
+            error = np.linalg.norm(current_pos - target_2d)
+            if error > 0.15:  # 15cm threshold
+                return True
 
         return traj_active
 
