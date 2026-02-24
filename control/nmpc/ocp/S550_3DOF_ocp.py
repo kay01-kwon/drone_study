@@ -147,7 +147,7 @@ class S550_3DOF_ocp:
         self.target_2d = None
         self.time_scale = 1.0
         self.t_start = 0.0
-        self.replan_interval = 0.01   # 10ms (100Hz)
+        self.replan_interval = 0.01   # Default: 10ms (100Hz), set via setup_tracking
 
         # Reference smoothing for 100Hz replanning
         self.ref_smooth_alpha = 0.3   # EMA filter constant
@@ -167,6 +167,8 @@ class S550_3DOF_ocp:
         self.target_2d = np.array(target_2d)
         self.target_3d = np.array([target_2d[0], 0.0, target_2d[1]])
         self.time_scale = tracking_params.get('time_scale', 1.0)
+        replan_freq = tracking_params.get('replan_freq', 100.0)
+        self.replan_interval = 1.0 / replan_freq
 
     def solve(self, state, ref, u_prev=None):
         """
