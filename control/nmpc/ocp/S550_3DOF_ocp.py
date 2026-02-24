@@ -146,7 +146,7 @@ class S550_3DOF_ocp:
         self.target_2d = None
         self.time_scale = 1.0
         self.t_start = 0.0
-        self.replan_interval = 0.1  # 100ms (10Hz)
+        self.replan_interval = 0.01  # 100ms (100Hz)
 
     def setup_tracking(self, tracking_params, target_2d):
         """Initialize Hehn trajectory generator for tracking mode."""

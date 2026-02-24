@@ -28,7 +28,7 @@ nmpc_params:
   RArray: 10.0                  # u1, u2, u3
 
 regulation:
-  setpoint_position: [0.0, 1.0]  # [x, z] target [m]
+  setpoint_position: [0.0, 0.5]  # [x, z] target [m]
 
 tracking:
   target_position: [0.0, 1.0]  # [x, z] target [m]
