@@ -145,38 +145,108 @@ class ScaledTrajectory:
         return self._traj.duration * self._s
 
 
+def estimate_acceleration(state, w_rotor, C_T, m):
+    """
+    Model-based acceleration estimation from current thrust and pitch.
+    a_world = R @ (f_body / m) + g_vec
+
+    :param state: [px, pz, vx, vz, th, q]
+    :param w_rotor: rotor speeds [w1, w2, w3] in rad/s
+    :param C_T: thrust coefficient
+    :param m: mass
+    :return: [ax, az] in world frame
+    """
+    from utils.math_tool import pitch_to_rotm
+
+    theta = state[4]
+    R = pitch_to_rotm(theta)
+
+    # Total thrust from rotor speeds (hexarotor: 2 motors per group)
+    f_total = 2.0 * C_T * np.sum(w_rotor**2)
+    f_body = np.array([0.0, f_total])
+
+    # World frame acceleration
+    g_vec = np.array([0.0, -9.81])
+    a_world = R @ (f_body / m) + g_vec
+
+    return a_world  # [ax, az]
+
+
+class TrajectoryManager:
+    """Manages Hehn trajectory generation with online replanning."""
+
+    def __init__(self, params, target_2d):
+        from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
+
+        tp = params['tracking_params']
+        self.qp = QuadParams(a_max=tp['a_max'], a_min=tp['a_min'],
+                             omega_xy_max=tp['omega_xy_max'])
+        self.gen = HehnTrajectoryGenerator(qp=self.qp)
+        self.time_scale = tp.get('time_scale', 1.0)
+        self.target = np.array([target_2d[0], 0.0, target_2d[1]])
+
+        self.traj = None
+        self.t_start = 0.0  # Time when current trajectory started
+        self.last_replan_time = -np.inf  # Last absolute time when replanning occurred
+        self.replan_interval = 2.0  # Minimum interval between replans (seconds)
+
+    def generate(self, state_2d, acc_2d, t_now):
+        """
+        Generate new trajectory from current state to target.
+
+        :param state_2d: [px, pz, vx, vz]
+        :param acc_2d: [ax, az] current acceleration
+        :param t_now: current simulation time
+        """
+        pos0 = np.array([state_2d[0], 0.0, state_2d[1]])
+        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
+        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
+
+        traj_raw = self.gen.generate(pos0, vel0, acc0, target=self.target)
+
+        if self.time_scale != 1.0:
+            self.traj = ScaledTrajectory(traj_raw, self.time_scale)
+        else:
+            self.traj = traj_raw
+
+        self.t_start = t_now
+        self.last_replan_time = t_now
+
+    def should_replan(self, t_now):
+        """Check if replanning is needed based on time interval."""
+        time_since_replan = t_now - self.last_replan_time
+        t_rel = t_now - self.t_start
+        # Replan if: enough time passed AND not near trajectory end
+        return (time_since_replan >= self.replan_interval) and (t_rel < self.traj.duration - 0.5)
+
+    def get_reference(self, t_now):
+        """Get trajectory reference at current time (relative to trajectory start)."""
+        t_rel = t_now - self.t_start
+        return self.traj, t_rel
+
+    @property
+    def duration(self):
+        return self.traj.duration if self.traj else 0.0
+
+
 def setup_trajectory_3d(mode, params, state0):
     """Setup trajectory generator for 3DOF.
-    Returns: trajectory object or None for regulation.
+    Returns: TrajectoryManager object or None for regulation.
     """
     if mode == 'regulation':
         return None
 
-    # Tracking mode: use Hehn trajectory
-    from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
-
     tp = params['tracking_params']
-    qp = QuadParams(a_max=tp['a_max'], a_min=tp['a_min'],
-                    omega_xy_max=tp['omega_xy_max'])
-    gen = HehnTrajectoryGenerator(qp=qp)
-
-    # Initial state (3D: x, y=0, z)
-    pos0 = np.array([state0[0], 0.0, state0[1]])
-    vel0 = np.array([state0[2], 0.0, state0[3]])
-    acc0 = np.array([0.0, 0.0, 0.0])
-
-    # Target from tracking params
     target_2d = tp['target_position']
-    target = np.array([target_2d[0], 0.0, target_2d[1]])
 
-    traj = gen.generate(pos0, vel0, acc0, target=target)
+    traj_mgr = TrajectoryManager(params, target_2d)
 
-    # Apply time scaling
-    time_scale = tp.get('time_scale', 1.0)
-    if time_scale != 1.0:
-        traj = ScaledTrajectory(traj, time_scale)
+    # Initial trajectory with acc0 = 0 (drone at rest)
+    state_2d = np.array([state0[0], state0[1], state0[2], state0[3]])
+    acc_2d = np.array([0.0, 0.0])
+    traj_mgr.generate(state_2d, acc_2d, t_now=0.0)
 
-    return traj
+    return traj_mgr
 
 
 def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
@@ -310,13 +380,17 @@ def main():
 
     # Setup trajectory for tracking mode
     s_body_init = drone_sim_model.get_state(s_drone)
-    traj = setup_trajectory_3d(control_mode, params, s_body_init)
+    traj_mgr = setup_trajectory_3d(control_mode, params, s_body_init)
+
+    # Parameters for acceleration estimation (for replanning)
+    C_T = params['nominal_drone_params']['motor_const']
+    m_nom = params['nominal_dynamic_params']['m']
 
     if control_mode == 'regulation':
         p_target = params['regulation_params']['setpoint_position']
         print(f"\nRegulation: target position x={p_target[0]:.2f}, z={p_target[1]:.2f} m")
     else:
-        print(f"\nTracking: Hehn trajectory, duration={traj.duration:.2f}s")
+        print(f"\nTracking: Hehn trajectory, duration={traj_mgr.duration:.2f}s (with replanning)")
         print(f"  Target: {params['tracking_params']['target_position']}")
 
     print(f"Simulation time: {tf:.1f} s, dt: {dt*1000:.1f} ms\n")
@@ -352,9 +426,21 @@ def main():
             p_des = params['regulation_params']['setpoint_position']
             v_des = np.array([0.0, 0.0])
         else:
-            # Tracking: from hehn trajectory
-            pos_3d = traj.get_position(t_now)
-            vel_3d = traj.get_velocity(t_now)
+            # Tracking: from hehn trajectory with replanning
+            traj, t_rel = traj_mgr.get_reference(t_now)
+
+            if traj_mgr.should_replan(t_now):
+                # Estimate current acceleration from rotor speeds
+                acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
+                state_2d = np.array([p[0], p[1], v_body[0], v_body[1]])
+                traj_mgr.generate(state_2d, acc_est, t_now)
+                traj, t_rel = traj_mgr.get_reference(t_now)
+                if i % 100 == 0:
+                    print(f"[Replan] t={t_now:.2f}s, pos=[{p[0]:.3f}, {p[1]:.3f}], "
+                          f"new duration={traj.duration:.2f}s")
+
+            pos_3d = traj.get_position(t_rel)
+            vel_3d = traj.get_velocity(t_rel)
             p_des = np.array([pos_3d[0], pos_3d[2]])  # x, z
             v_des = np.array([vel_3d[0], vel_3d[2]])  # vx, vz
 
@@ -384,7 +470,8 @@ def main():
         # Compute control
         if control_type == 'nmpc':
             if control_mode == 'tracking':
-                status, w_cmd = controller.solve_for_trajectory(s_body, t_now, traj)
+                traj, t_rel = traj_mgr.get_reference(t_now)
+                status, w_cmd = controller.solve_for_trajectory(s_body, t_rel, traj)
             else:
                 status, w_cmd = controller.solve(s_body, ref)
 

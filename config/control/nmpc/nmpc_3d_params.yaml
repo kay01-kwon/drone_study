@@ -35,4 +35,4 @@ tracking:
   a_max: 12.0                  # Max total acceleration (thrust/mass) [m/s^2], must > g
   a_min: 3.0                   # Min total acceleration [m/s^2]
   omega_xy_max: 3.0            # Max angular rate [rad/s] - limits jerk
-  time_scale: 5.0              # Trajectory time stretch factor (1.0 = original)
+  time_scale: 2.0              # Trajectory time stretch factor (1.0 = original, slower = larger)
