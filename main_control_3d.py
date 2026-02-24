@@ -55,6 +55,12 @@ def load_parameters_3d(control_type, dob_type):
             'setpoint_position': np.array(regulation.get('setpoint_position', [0.0, 1.0]))
         }
 
+        # Tracking params
+        tracking = config_control.get('tracking', {})
+        params['tracking_params'] = {
+            'target_position': np.array(tracking.get('target_position', [2.0, 1.0]))
+        }
+
     elif control_type == 'pd':
         config_control = yaml_loader.load_yaml('config/control/pd/pd_3d_params.yaml')
         params['nominal_dynamic_params'] = yaml_loader.get_dynamic_params(config_control)
@@ -65,6 +71,9 @@ def load_parameters_3d(control_type, dob_type):
         # Default regulation for PD
         params['regulation_params'] = {
             'setpoint_position': np.array([0.0, 1.0])
+        }
+        params['tracking_params'] = {
+            'target_position': np.array([2.0, 1.0])
         }
 
     # Load DOB parameters
@@ -123,8 +132,8 @@ def setup_trajectory_3d(mode, params, state0):
     vel0 = np.array([state0[2], 0.0, state0[3]])
     acc0 = np.array([0.0, 0.0, 0.0])
 
-    # Target from regulation params
-    target_2d = params['regulation_params']['setpoint_position']
+    # Target from tracking params
+    target_2d = params['tracking_params']['target_position']
     target = np.array([target_2d[0], 0.0, target_2d[1]])
 
     traj = gen.generate(pos0, vel0, acc0, target=target)
@@ -269,7 +278,7 @@ def main():
         print(f"\nRegulation: target position x={p_target[0]:.2f}, z={p_target[1]:.2f} m")
     else:
         print(f"\nTracking: Hehn trajectory, duration={traj.duration:.2f}s")
-        print(f"  Target: {params['regulation_params']['setpoint_position']}")
+        print(f"  Target: {params['tracking_params']['target_position']}")
 
     print(f"Simulation time: {tf:.1f} s, dt: {dt*1000:.1f} ms\n")
 

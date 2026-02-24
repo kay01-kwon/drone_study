@@ -29,3 +29,6 @@ nmpc_params:
 
 regulation:
   setpoint_position: [0.0, 1.0]  # [x, z] target [m]
+
+tracking:
+  target_position: [2.0, 1.0]  # [x, z] target [m]
