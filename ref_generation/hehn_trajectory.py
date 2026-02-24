@@ -49,9 +49,9 @@ class AxisTrajectory:
         self.tf = 0.0
         self._solved = False
 
-    def solve(self, tol=1e-4, tf_max=20.0):
+    def solve(self, tol=1e-2, tf_max=20.0):
         """Solve for minimum-time trajectory."""
-        if abs(self.w0)<1e-6 and abs(self.v0)<1e-6 and abs(self.a0)<1e-6:
+        if abs(self.w0)<1e-2 and abs(self.v0)<1e-2 and abs(self.a0)<1e-6:
             self.tf=0; self._solved=True; return 0.0
         if self.j<1e-12:
             self.tf=tf_max; self._solved=True; return self.tf
