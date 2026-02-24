@@ -36,3 +36,4 @@ tracking:
   a_min: 3.0                   # Min total acceleration [m/s^2]
   omega_xy_max: 10.0            # Max angular rate [rad/s] - limits jerk
   time_scale: 1.0              # Trajectory time stretch factor (1.0 = original, slower = larger)
+  replan_freq: 100.0           # Trajectory replanning frequency [Hz]
