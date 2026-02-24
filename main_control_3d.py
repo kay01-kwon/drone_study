@@ -21,6 +21,7 @@ Date: 2026-02-11
 import numpy as np
 import argparse
 import matplotlib.pyplot as plt
+import time
 
 from utils import yaml_loader
 from utils.state_initializer import state_initialize
@@ -321,6 +322,7 @@ def main():
     alpha_rotor_hist = []
     f_est_hist = []
     tau_est_hist = []
+    nmpc_solve_times = []
 
     # Main simulation loop
     for i in range(N - 1):
@@ -357,6 +359,7 @@ def main():
 
         # Compute control
         if control_type == 'nmpc':
+            t_solve_start = time.perf_counter()
             if control_mode == 'tracking':
                 # Tracking: NMPC generates trajectory and returns p_des, v_des
                 state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
@@ -364,6 +367,8 @@ def main():
                     s_body, state_2d, t_now)
             else:
                 status, w_cmd = controller.solve(s_body, ref)
+            t_solve_end = time.perf_counter()
+            nmpc_solve_times.append(t_solve_end - t_solve_start)
 
             if dob is not None and t_now > 1.0:
                 # DOB compensation: subtract disturbance from NMPC output
@@ -451,6 +456,19 @@ def main():
     print("Simulation Complete")
     print(f"Final position: x={drone_data['pos'][-1, 0]:.3f}, z={drone_data['pos'][-1, 1]:.3f} m")
     print(f"Final pitch: {np.rad2deg(drone_data['pitch'][-1]):.2f} deg")
+
+    # NMPC solve time statistics
+    if control_type == 'nmpc' and len(nmpc_solve_times) > 0:
+        solve_times_ms = np.array(nmpc_solve_times) * 1000
+        print(f"\nNMPC Solve Time Statistics:")
+        print(f"  Mean:   {np.mean(solve_times_ms):.3f} ms")
+        print(f"  Std:    {np.std(solve_times_ms):.3f} ms")
+        print(f"  Max:    {np.max(solve_times_ms):.3f} ms")
+        print(f"  Min:    {np.min(solve_times_ms):.3f} ms")
+        print(f"  Sim dt: {dt*1000:.1f} ms")
+        realtime_ratio = (dt * 1000) / np.mean(solve_times_ms)
+        print(f"  Real-time ratio: {realtime_ratio:.1f}x (>1 means real-time capable)")
+
     print(f"{'='*60}")
 
     # Plot results
