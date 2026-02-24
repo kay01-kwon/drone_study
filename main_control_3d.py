@@ -305,7 +305,7 @@ def main():
         target_2d = params['tracking_params']['target_position']
         if control_type == 'nmpc':
             controller.setup_tracking(params['tracking_params'], target_2d)
-        print(f"\nTracking: Hehn trajectory, replan at 10Hz")
+        print(f"\nTracking: Hehn trajectory, replan at 100Hz")
         print(f"  Target: {target_2d}")
 
     print(f"Simulation time: {tf:.1f} s, dt: {dt*1000:.1f} ms\n")
