@@ -239,29 +239,13 @@ class S550_3DOF_ocp:
         # Use previous optimal control for reference if available
         u_ref = self.previous_u0 if self.previous_u0 is not None else u_prev
 
-        # Check if we should use regulation (target hold) instead of trajectory
-        dist_to_target = np.linalg.norm(state_2d[0:2] - self.target_2d)
-        vel_mag = np.linalg.norm(state_2d[2:4])
-        use_regulation = (dist_to_target < 0.03 and vel_mag < 0.05)
+        # Simple 100Hz replanning: replan every interval
+        need_replan = self.traj is None
+        if not need_replan and (t_now - self.t_start) >= self.replan_interval:
+            need_replan = True
 
-        if not use_regulation:
-            # Check if we need to regenerate trajectory
-            need_replan = self.traj is None
-            if not need_replan and (t_now - self.t_start) >= self.replan_interval:
-                # Check tracking error - only regenerate if tracking is poor
-                t_rel_check = t_now - self.t_start
-                if t_rel_check < self.traj.duration:
-                    p_ref, _ = self._get_reference(t_rel_check)
-                    pos_err = np.linalg.norm(state_2d[0:2] - p_ref)
-                    if pos_err > 0.01:  # Poor tracking: regenerate from actual state
-                        need_replan = True
-                    # else: good tracking, keep using existing trajectory
-                else:
-                    # Trajectory ended but not at target yet
-                    need_replan = True
-
-            if need_replan:
-                self._generate_trajectory(state_2d, t_now)
+        if need_replan:
+            self._generate_trajectory_simple(state_2d, t_now)
 
         t_rel = t_now - self.t_start
         dt = self.T / self.N
@@ -273,46 +257,22 @@ class S550_3DOF_ocp:
         self.ocp_solver.set(0, 'lbx', state_transformed)
         self.ocp_solver.set(0, 'ubx', state_transformed)
 
-        if use_regulation:
-            # Near target: use fixed-point regulation reference
-            ref_reg = np.zeros(6)
-            ref_reg[0] = self.target_2d[0]
-            ref_reg[1] = self.target_2d[1]
-            for stage in range(self.N):
-                y_ref = np.concatenate((ref_reg, u_ref))
-                self.ocp_solver.set(stage, 'y_ref', y_ref)
-            self.ocp_solver.set(self.N, 'y_ref', ref_reg)
-            # Get raw p_des, v_des for logging
-            p_des_raw = self.target_2d.copy()
-            v_des_raw = np.zeros(2)
-        else:
-            # Set reference for each stage along prediction horizon
-            for stage in range(self.N):
-                t_ref = t_rel + stage * dt
-                ref_stage = self._traj_to_ref(t_ref)
-                y_ref = np.concatenate((ref_stage, u_ref))
-                self.ocp_solver.set(stage, 'y_ref', y_ref)
+        # Set reference for each stage along prediction horizon
+        for stage in range(self.N):
+            t_ref = t_rel + stage * dt
+            ref_stage = self._traj_to_ref(t_ref)
+            y_ref = np.concatenate((ref_stage, u_ref))
+            self.ocp_solver.set(stage, 'y_ref', y_ref)
 
-            # Terminal reference
-            t_ref_N = t_rel + self.T
-            ref_N = self._traj_to_ref(t_ref_N)
-            self.ocp_solver.set(self.N, 'y_ref', ref_N)
-            # Get raw p_des, v_des for logging
-            p_des_raw, v_des_raw = self._get_reference(t_rel)
+        # Terminal reference
+        t_ref_N = t_rel + self.T
+        ref_N = self._traj_to_ref(t_ref_N)
+        self.ocp_solver.set(self.N, 'y_ref', ref_N)
 
         status = self.ocp_solver.solve()
 
-        # Apply EMA smoothing to reference for logging (reduces visual noise)
-        alpha = self.ref_smooth_alpha
-        if self.p_des_smooth is None:
-            self.p_des_smooth = p_des_raw.copy()
-            self.v_des_smooth = v_des_raw.copy()
-        else:
-            self.p_des_smooth = alpha * p_des_raw + (1 - alpha) * self.p_des_smooth
-            self.v_des_smooth = alpha * v_des_raw + (1 - alpha) * self.v_des_smooth
-
-        p_des = self.p_des_smooth.copy()
-        v_des = self.v_des_smooth.copy()
+        # Get p_des, v_des at current time for logging
+        p_des, v_des = self._get_reference(t_rel)
 
         # Store state trajectory and control for warm start
         self.previous_states = []
@@ -325,35 +285,12 @@ class S550_3DOF_ocp:
 
         return status, w_cmd, p_des, v_des
 
-    def _generate_trajectory(self, state_2d, t_now):
-        """Generate Hehn trajectory from current position to target.
-
-        Uses HehnTrajectory directly: pos0 -> target.
-        get_position(t) returns desired position, get_velocity(t) returns
-        desired velocity. No sign conversions needed.
-
-        For 100Hz replanning continuity: if previous trajectory exists and
-        tracking error is small, use the previous trajectory's reference
-        as initial condition (not actual state). This ensures smooth
-        reference transitions.
+    def _generate_trajectory_simple(self, state_2d, t_now):
+        """Generate Hehn trajectory from current state to target.
+        Simple version: always use actual state, no continuity logic.
         """
-        # Check if we can use previous trajectory reference for continuity
-        use_traj_ref = False
-        if self.traj is not None:
-            t_rel = t_now - self.t_start
-            if t_rel < self.traj.duration:
-                p_ref, v_ref = self._get_reference(t_rel)
-                pos_err = np.linalg.norm(state_2d[0:2] - p_ref)
-                if pos_err < 0.01:  # Good tracking: use trajectory reference
-                    use_traj_ref = True
-                    pos0 = np.array([p_ref[0], 0.0, p_ref[1]])
-                    vel0 = np.array([v_ref[0], 0.0, v_ref[1]])
-
-        if not use_traj_ref:
-            # Use actual state (first trajectory or large tracking error)
-            pos0 = np.array([state_2d[0], 0.0, state_2d[1]])
-            vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
-
+        pos0 = np.array([state_2d[0], 0.0, state_2d[1]])
+        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
         acc0 = np.zeros(3)
 
         traj_raw = self.traj_gen.generate(pos0, vel0, acc0, target=self.target_3d)
