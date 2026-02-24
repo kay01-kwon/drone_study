@@ -173,7 +173,12 @@ def estimate_acceleration(state, w_rotor, C_T, m):
 
 
 class TrajectoryManager:
-    """Manages Hehn trajectory generation with online replanning."""
+    """Manages Hehn trajectory generation with online replanning.
+
+    Internally uses error representation: w0 = target - current_pos.
+    The Hehn trajectory drives w from w0 to 0 (error → 0).
+    Desired position: p_des = target - traj.get_position(t_rel)
+    """
 
     def __init__(self, params, target_2d):
         from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
@@ -184,25 +189,23 @@ class TrajectoryManager:
         self.gen = HehnTrajectoryGenerator(qp=self.qp)
         self.time_scale = tp.get('time_scale', 1.0)
         self.target = np.array([target_2d[0], 0.0, target_2d[1]])
+        self.target_2d = np.array(target_2d)
 
         self.traj = None
-        self.t_start = 0.0  # Time when current trajectory started
-        self.last_replan_time = -np.inf  # Last absolute time when replanning occurred
-        self.replan_interval = 2.0  # Minimum interval between replans (seconds)
+        self.t_start = 0.0
+        self.last_replan_time = -np.inf
+        self.replan_interval = 2.0
 
     def generate(self, state_2d, acc_2d, t_now):
+        """Generate trajectory in error space: w0 = target - current_pos.
+        Since w = target - pos, dw/dt = -v, d²w/dt² = -a.
         """
-        Generate new trajectory from current state to target.
+        pos = np.array([state_2d[0], 0.0, state_2d[1]])
+        w0 = self.target - pos
+        vel0 = -np.array([state_2d[2], 0.0, state_2d[3]])
+        acc0 = -np.array([acc_2d[0], 0.0, acc_2d[1]])
 
-        :param state_2d: [px, pz, vx, vz]
-        :param acc_2d: [ax, az] current acceleration
-        :param t_now: current simulation time
-        """
-        pos0 = np.array([state_2d[0], 0.0, state_2d[1]])
-        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
-        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
-
-        traj_raw = self.gen.generate(pos0, vel0, acc0, target=self.target)
+        traj_raw = self.gen.generate(w0, vel0, acc0)
 
         if self.time_scale != 1.0:
             self.traj = ScaledTrajectory(traj_raw, self.time_scale)
@@ -212,33 +215,20 @@ class TrajectoryManager:
         self.t_start = t_now
         self.last_replan_time = t_now
 
-    def should_replan(self, t_now, current_pos=None):
-        """Check if replanning is needed based on time interval and tracking error.
-
-        Replanning occurs if:
-        1. Enough time has passed since last replan (replan_interval), AND
-        2. Either: trajectory is still active, OR position error exceeds threshold
-        """
-        time_since_replan = t_now - self.last_replan_time
-        if time_since_replan < self.replan_interval:
-            return False
-
-        t_rel = t_now - self.t_start
-        traj_active = t_rel < self.traj.duration - 0.5
-
-        # After trajectory ends, replan if position error is large
-        if not traj_active and current_pos is not None:
-            target_2d = self.target[[0, 2]]  # [x, z]
-            error = np.linalg.norm(current_pos - target_2d)
-            if error > 0.15:  # 15cm threshold
-                return True
-
-        return traj_active
+    def should_replan(self, t_now):
+        """Fixed-interval replanning."""
+        return (t_now - self.last_replan_time) >= self.replan_interval
 
     def get_reference(self, t_now):
-        """Get trajectory reference at current time (relative to trajectory start)."""
+        """Get desired [p_des, v_des] at current time.
+        p_des = target - error(t), v_des = -d(error)/dt
+        """
         t_rel = t_now - self.t_start
-        return self.traj, t_rel
+        err = self.traj.get_position(t_rel)
+        err_dot = self.traj.get_velocity(t_rel)
+        p_des = self.target_2d - np.array([err[0], err[2]])
+        v_des = -np.array([err_dot[0], err_dot[2]])
+        return p_des, v_des
 
     @property
     def duration(self):
@@ -442,23 +432,17 @@ def main():
             p_des = params['regulation_params']['setpoint_position']
             v_des = np.array([0.0, 0.0])
         else:
-            # Tracking: from hehn trajectory with replanning
-            traj, t_rel = traj_mgr.get_reference(t_now)
-
-            if traj_mgr.should_replan(t_now, current_pos=p):
-                # Estimate current acceleration from rotor speeds
+            # Tracking: replanning at fixed interval
+            if traj_mgr.should_replan(t_now):
                 acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
-                state_2d = np.array([p[0], p[1], v_body[0], v_body[1]])
+                from utils.math_tool import pitch_to_rotm
+                v_world = pitch_to_rotm(theta) @ v_body
+                state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
                 traj_mgr.generate(state_2d, acc_est, t_now)
-                traj, t_rel = traj_mgr.get_reference(t_now)
                 if i % 100 == 0:
-                    print(f"[Replan] t={t_now:.2f}s, pos=[{p[0]:.3f}, {p[1]:.3f}], "
-                          f"new duration={traj.duration:.2f}s")
+                    print(f"[Replan] t={t_now:.2f}s, pos=[{p[0]:.3f}, {p[1]:.3f}]")
 
-            pos_3d = traj.get_position(t_rel)
-            vel_3d = traj.get_velocity(t_rel)
-            p_des = np.array([pos_3d[0], pos_3d[2]])  # x, z
-            v_des = np.array([vel_3d[0], vel_3d[2]])  # vx, vz
+            p_des, v_des = traj_mgr.get_reference(t_now)
 
         ref = np.concatenate([p_des, v_des])
 
@@ -485,11 +469,7 @@ def main():
 
         # Compute control
         if control_type == 'nmpc':
-            if control_mode == 'tracking':
-                traj, t_rel = traj_mgr.get_reference(t_now)
-                status, w_cmd = controller.solve_for_trajectory(s_body, t_rel, traj)
-            else:
-                status, w_cmd = controller.solve(s_body, ref)
+            status, w_cmd = controller.solve(s_body, ref)
 
             if dob is not None and t_now > 2.0:
                 # DOB compensation: subtract disturbance moment from NMPC output
