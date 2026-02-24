@@ -215,12 +215,11 @@ class S550_3DOF_ocp:
 
         return status, w_cmd
 
-    def solve_for_trajectory(self, state, state_2d, acc_2d, t_now, u_prev=None):
+    def solve_for_trajectory(self, state, state_2d, t_now, u_prev=None):
         """
         Solve OCP for trajectory tracking with internal trajectory generation.
         :param state: [px, pz, vx_body, vz_body, th, q]
         :param state_2d: [px, pz, vx_world, vz_world] for trajectory generation
-        :param acc_2d: [ax, az] world-frame acceleration
         :param t_now: Current simulation time
         :param u_prev: previous thrust [u1, u2, u3]
         :return: (status, w_cmd, p_des, v_des)
@@ -230,7 +229,7 @@ class S550_3DOF_ocp:
 
         # Replan if interval elapsed
         if (t_now - self.t_start) >= self.replan_interval or self.traj is None:
-            self._generate_trajectory(state_2d, acc_2d, t_now)
+            self._generate_trajectory(state_2d, t_now)
 
         t_rel = t_now - self.t_start
         dt = self.T / self.N
@@ -269,26 +268,24 @@ class S550_3DOF_ocp:
 
         return status, w_cmd, p_des, v_des
 
-    def _generate_trajectory(self, state_2d, acc_2d, t_now):
+    def _generate_trajectory(self, state_2d, t_now):
         """Generate Hehn trajectory from current position to target.
 
         Uses HehnTrajectory directly: pos0 -> target.
         get_position(t) returns desired position, get_velocity(t) returns
         desired velocity. No sign conversions needed.
+
+        Note: acc0 is NOT passed to the trajectory generator because the
+        model-based acceleration estimate (from rotor thrust) can be wildly
+        wrong on the ground (idle rotors give acc ≈ -8.6 m/s² which is
+        outside the Hehn constraint bounds and causes the trajectory to go
+        in the wrong direction).
         """
         pos0 = np.array([state_2d[0], 0.0, state_2d[1]])
         vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
-        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
+        acc0 = np.zeros(3)
 
         traj_raw = self.traj_gen.generate(pos0, vel0, acc0, target=self.target_3d)
-
-        # Debug: print trajectory info at replan
-        if t_now < 0.5:  # Only print for first few replans
-            p0 = pos0 - self.target_3d
-            print(f"[Traj] t={t_now:.2f} pos0={pos0} target={self.target_3d}")
-            print(f"       p0(internal)={p0} vel0={vel0}")
-            print(f"       get_pos(0)={traj_raw.get_position(0)} get_vel(0)={traj_raw.get_velocity(0)}")
-            print(f"       get_pos(0.5)={traj_raw.get_position(0.5)} get_vel(0.5)={traj_raw.get_velocity(0.5)}")
 
         if self.time_scale != 1.0:
             self.traj = ScaledTrajectory(traj_raw, self.time_scale)
