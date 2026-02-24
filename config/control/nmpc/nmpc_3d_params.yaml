@@ -21,10 +21,10 @@ rotor_params:
 nmpc_params:
   t_horizon: 1.0
   n_nodes: 20
-  QArray: [ 2.0, 10.0,         # px, pz
-            1.0, 7.0,          # vx, vz
-            10.0,              # th (pitch)
-            5.0 ]              # q (pitch rate)
+  QArray: [ 10.0, 10.0,        # px, pz  (balanced position tracking)
+            3.0, 7.0,          # vx, vz
+            5.0,               # th (pitch) - lowered to allow pitch for x-tracking
+            3.0 ]              # q (pitch rate)
   RArray: 0.1                  # u1, u2, u3
 
 regulation:

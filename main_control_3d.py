@@ -212,12 +212,24 @@ class TrajectoryManager:
         self.t_start = t_now
         self.last_replan_time = t_now
 
-    def should_replan(self, t_now):
-        """Check if replanning is needed based on time interval."""
+    def should_replan(self, t_now, current_pos=None):
+        """Check if replanning is needed based on time interval and tracking error.
+
+        Replanning occurs if:
+        1. Enough time has passed since last replan (replan_interval), AND
+        2. Trajectory is still active (not near end)
+
+        Note: We DON'T replan after trajectory ends to avoid discontinuous reference.
+        After trajectory ends, NMPC continues tracking the terminal reference (target).
+        """
         time_since_replan = t_now - self.last_replan_time
+        if time_since_replan < self.replan_interval:
+            return False
+
         t_rel = t_now - self.t_start
-        # Replan if: enough time passed AND not near trajectory end
-        return (time_since_replan >= self.replan_interval) and (t_rel < self.traj.duration - 0.5)
+        traj_active = t_rel < self.traj.duration - 0.5
+
+        return traj_active
 
     def get_reference(self, t_now):
         """Get trajectory reference at current time (relative to trajectory start)."""
@@ -429,7 +441,7 @@ def main():
             # Tracking: from hehn trajectory with replanning
             traj, t_rel = traj_mgr.get_reference(t_now)
 
-            if traj_mgr.should_replan(t_now):
+            if traj_mgr.should_replan(t_now, current_pos=p):
                 # Estimate current acceleration from rotor speeds
                 acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
                 state_2d = np.array([p[0], p[1], v_body[0], v_body[1]])
