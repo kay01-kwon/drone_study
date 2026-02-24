@@ -286,15 +286,18 @@ class S550_3DOF_ocp:
         self.t_start = t_now
 
     def _traj_to_ref(self, t):
-        """Convert error-based Hehn trajectory to NMPC reference."""
+        """Convert error-based Hehn trajectory to NMPC reference.
+        Note: traj.get_velocity() returns dw/dt (error rate).
+        Since w = target - pos, dw/dt = -v_drone, so v_des = -dw/dt.
+        """
         err = self.traj.get_position(t)
         vel = self.traj.get_velocity(t)
 
         ref = np.zeros(6)
         ref[0] = self.target_2d[0] - err[0]   # px_des = target_x - error_x
         ref[1] = self.target_2d[1] - err[2]   # pz_des = target_z - error_z
-        ref[2] = vel[0]                        # vx_des
-        ref[3] = vel[2]                        # vz_des
+        ref[2] = -vel[0]                       # vx_des = -dw/dt
+        ref[3] = -vel[2]                       # vz_des = -dw/dt
         ref[4] = 0.0                           # th_des
         ref[5] = 0.0                           # q_des
         return ref
@@ -302,13 +305,14 @@ class S550_3DOF_ocp:
     def _get_reference(self, t_rel):
         """Get p_des, v_des for logging.
         Use a small lookahead to show the trajectory's next desired state.
+        Note: v_des = -dw/dt since dw/dt = -v_drone.
         """
         dt_lookahead = self.T / self.N  # One horizon step ahead
         t_sample = t_rel + dt_lookahead
         err = self.traj.get_position(t_sample)
         vel = self.traj.get_velocity(t_sample)
         p_des = self.target_2d - np.array([err[0], err[2]])
-        v_des = np.array([vel[0], vel[2]])
+        v_des = -np.array([vel[0], vel[2]])  # v_drone = -dw/dt
         return p_des, v_des
 
     def _state_transform(self, state):
