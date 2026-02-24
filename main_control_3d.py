@@ -202,8 +202,8 @@ class TrajectoryManager:
         """
         pos = np.array([state_2d[0], 0.0, state_2d[1]])
         w0 = self.target - pos
-        vel0 = -np.array([state_2d[2], 0.0, state_2d[3]])
-        acc0 = -np.array([acc_2d[0], 0.0, acc_2d[1]])
+        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
+        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
 
         traj_raw = self.gen.generate(w0, vel0, acc0)
 
@@ -227,7 +227,7 @@ class TrajectoryManager:
         err = self.traj.get_position(t_rel)
         err_dot = self.traj.get_velocity(t_rel)
         p_des = self.target_2d - np.array([err[0], err[2]])
-        v_des = -np.array([err_dot[0], err_dot[2]])
+        v_des = np.array([err_dot[0], err_dot[2]])
         return p_des, v_des
 
     @property
@@ -471,11 +471,12 @@ def main():
         if control_type == 'nmpc':
             status, w_cmd = controller.solve(s_body, ref)
 
-            if dob is not None and t_now > 2.0:
+            if dob is not None:
                 # DOB compensation: subtract disturbance moment from NMPC output
                 # Delay compensation until DOB has converged (t > 2s)
                 u_mpc = hexa_converter.compute_u(w_cmd)
                 u_comp = u_mpc.copy()
+                u_comp[0] -= d_est[1]
                 u_comp[1] -= d_est[2]              # subtract tau_ext from My
                 w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
 
