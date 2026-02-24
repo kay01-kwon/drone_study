@@ -151,7 +151,7 @@ def estimate_acceleration(state, w_rotor, C_T, m):
 
 def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
     """Plot results for 3DOF simulation"""
-    fig, axes = plt.subplots(3, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(4, 2, figsize=(14, 12))
 
     # Position X
     axes[0, 0].plot(t, drone_data['pos'][:, 0], 'b-', label='x')
@@ -169,38 +169,54 @@ def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
     axes[0, 1].legend()
     axes[0, 1].grid(True)
 
-    # Pitch
-    axes[1, 0].plot(t, np.rad2deg(drone_data['pitch']), 'b-', label='pitch')
-    axes[1, 0].set_ylabel('Pitch [deg]')
-    axes[1, 0].set_title('Pitch Angle')
+    # Velocity X
+    axes[1, 0].plot(t, drone_data['vel'][:, 0], 'b-', label='vx')
+    axes[1, 0].plot(t, ref_data['vel_des'][:, 0], 'r--', label='vx_des')
+    axes[1, 0].set_ylabel('Vx [m/s]')
+    axes[1, 0].set_title('Velocity X')
     axes[1, 0].legend()
     axes[1, 0].grid(True)
 
-    # Pitch rate
-    axes[1, 1].plot(t, np.rad2deg(drone_data['pitch_rate']), 'b-', label='pitch_rate')
-    axes[1, 1].set_ylabel('Pitch Rate [deg/s]')
-    axes[1, 1].set_title('Pitch Rate')
+    # Velocity Z
+    axes[1, 1].plot(t, drone_data['vel'][:, 1], 'b-', label='vz')
+    axes[1, 1].plot(t, ref_data['vel_des'][:, 1], 'r--', label='vz_des')
+    axes[1, 1].set_ylabel('Vz [m/s]')
+    axes[1, 1].set_title('Velocity Z')
     axes[1, 1].legend()
     axes[1, 1].grid(True)
 
-    # Rotor speeds
-    for i in range(rotor_data['w_rotor'].shape[1]):
-        axes[2, 0].plot(t, rotor_data['w_rotor'][:, i], label=f'w{i+1}')
-    axes[2, 0].set_ylabel('Rotor Speed [RPM]')
-    axes[2, 0].set_xlabel('Time [s]')
-    axes[2, 0].set_title('Rotor Speeds')
+    # Pitch
+    axes[2, 0].plot(t, np.rad2deg(drone_data['pitch']), 'b-', label='pitch')
+    axes[2, 0].set_ylabel('Pitch [deg]')
+    axes[2, 0].set_title('Pitch Angle')
     axes[2, 0].legend()
     axes[2, 0].grid(True)
 
-    # DOB estimates
-    axes[2, 1].plot(t, dob_data['f_est'][:, 0], 'b-', label='f_ext_x')
-    axes[2, 1].plot(t, dob_data['f_est'][:, 1], 'g-', label='f_ext_z')
-    axes[2, 1].plot(t, dob_data['tau_est'], 'r-', label='tau_ext')
-    axes[2, 1].set_ylabel('Disturbance')
-    axes[2, 1].set_xlabel('Time [s]')
-    axes[2, 1].set_title('DOB Estimates')
+    # Pitch rate
+    axes[2, 1].plot(t, np.rad2deg(drone_data['pitch_rate']), 'b-', label='pitch_rate')
+    axes[2, 1].set_ylabel('Pitch Rate [deg/s]')
+    axes[2, 1].set_title('Pitch Rate')
     axes[2, 1].legend()
     axes[2, 1].grid(True)
+
+    # Rotor speeds
+    for i in range(rotor_data['w_rotor'].shape[1]):
+        axes[3, 0].plot(t, rotor_data['w_rotor'][:, i], label=f'w{i+1}')
+    axes[3, 0].set_ylabel('Rotor Speed [RPM]')
+    axes[3, 0].set_xlabel('Time [s]')
+    axes[3, 0].set_title('Rotor Speeds')
+    axes[3, 0].legend()
+    axes[3, 0].grid(True)
+
+    # DOB estimates
+    axes[3, 1].plot(t, dob_data['f_est'][:, 0], 'b-', label='f_ext_x')
+    axes[3, 1].plot(t, dob_data['f_est'][:, 1], 'g-', label='f_ext_z')
+    axes[3, 1].plot(t, dob_data['tau_est'], 'r-', label='tau_ext')
+    axes[3, 1].set_ylabel('Disturbance')
+    axes[3, 1].set_xlabel('Time [s]')
+    axes[3, 1].set_title('DOB Estimates')
+    axes[3, 1].legend()
+    axes[3, 1].grid(True)
 
     plt.tight_layout()
     plt.savefig('results_3d.png', dpi=300)
@@ -317,6 +333,10 @@ def main():
         theta = s_body[4]
         q = s_body[5]
 
+        # Convert to world frame velocity
+        from utils.math_tool import pitch_to_rotm
+        v_world = pitch_to_rotm(theta) @ v_body
+
         w_rotor, alpha_rotor = rotor_sim_model.unpack_state(s_rotor)
 
         # Compute reference
@@ -339,8 +359,6 @@ def main():
         if control_type == 'nmpc':
             if control_mode == 'tracking':
                 # Tracking: NMPC generates trajectory and returns p_des, v_des
-                from utils.math_tool import pitch_to_rotm
-                v_world = pitch_to_rotm(theta) @ v_body
                 state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
                 acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
                 status, w_cmd, p_des, v_des = controller.solve_for_trajectory(
@@ -371,7 +389,7 @@ def main():
 
         # Store history
         pos_hist.append(p.copy())
-        vel_hist.append(v_body.copy())
+        vel_hist.append(v_world.copy())
         pitch_hist.append(theta)
         pitch_rate_hist.append(q)
         pos_des_hist.append(p_des.copy())
