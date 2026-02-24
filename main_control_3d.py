@@ -150,7 +150,7 @@ def estimate_acceleration(state, w_rotor, C_T, m):
     return a_world  # [ax, az]
 
 
-def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
+def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data, nmpc_solve_times=None):
     """Plot results for 3DOF simulation"""
     fig, axes = plt.subplots(4, 2, figsize=(14, 12))
 
@@ -222,6 +222,40 @@ def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
     plt.tight_layout()
     plt.savefig('results_3d.png', dpi=300)
     plt.show()
+
+    # NMPC solve time histogram
+    if nmpc_solve_times is not None and len(nmpc_solve_times) > 0:
+        solve_times_ms = np.array(nmpc_solve_times) * 1000
+
+        fig_hist, ax_hist = plt.subplots(figsize=(8, 5))
+
+        # Histogram with 0.5ms bins
+        max_time = max(15.0, np.max(solve_times_ms) + 1)
+        bins = np.arange(0, max_time, 0.5)
+        ax_hist.hist(solve_times_ms, bins=bins, edgecolor='black', alpha=0.7, color='steelblue')
+
+        # Add vertical lines for statistics
+        mean_time = np.mean(solve_times_ms)
+        max_solve = np.max(solve_times_ms)
+        ax_hist.axvline(mean_time, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_time:.2f} ms')
+        ax_hist.axvline(max_solve, color='orange', linestyle='--', linewidth=2, label=f'Max: {max_solve:.2f} ms')
+        ax_hist.axvline(10.0, color='green', linestyle=':', linewidth=2, label='Control loop: 10 ms')
+
+        # Statistics text box
+        stats_text = f'N = {len(solve_times_ms)}\nMean: {mean_time:.2f} ms\nMax: {max_solve:.2f} ms\nStd: {np.std(solve_times_ms):.2f} ms'
+        ax_hist.text(0.95, 0.95, stats_text, transform=ax_hist.transAxes, fontsize=10,
+                     verticalalignment='top', horizontalalignment='right',
+                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        ax_hist.set_xlabel('Solve Time [ms]')
+        ax_hist.set_ylabel('Count')
+        ax_hist.set_title('NMPC Solve Time Distribution')
+        ax_hist.legend(loc='upper left')
+        ax_hist.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig('nmpc_solve_time_hist.png', dpi=300)
+        plt.show()
 
 
 def main():
@@ -482,7 +516,8 @@ def main():
     print(f"{'='*60}")
 
     # Plot results
-    plot_results_3d(t_sim[:-1], drone_data, rotor_data, ref_data, dob_data)
+    plot_results_3d(t_sim[:-1], drone_data, rotor_data, ref_data, dob_data,
+                    nmpc_solve_times=nmpc_solve_times if control_type == 'nmpc' else None)
 
     # Cleanup for NMPC
     if control_type == 'nmpc':
