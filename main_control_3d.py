@@ -58,7 +58,11 @@ def load_parameters_3d(control_type, dob_type):
         # Tracking params
         tracking = config_control.get('tracking', {})
         params['tracking_params'] = {
-            'target_position': np.array(tracking.get('target_position', [2.0, 1.0]))
+            'target_position': np.array(tracking.get('target_position', [2.0, 1.0])),
+            'a_max': tracking.get('a_max', 12.0),
+            'a_min': tracking.get('a_min', 3.0),
+            'omega_xy_max': tracking.get('omega_xy_max', 3.0),
+            'time_scale': tracking.get('time_scale', 5.0),
         }
 
     elif control_type == 'pd':
@@ -73,7 +77,11 @@ def load_parameters_3d(control_type, dob_type):
             'setpoint_position': np.array([0.0, 1.0])
         }
         params['tracking_params'] = {
-            'target_position': np.array([2.0, 1.0])
+            'target_position': np.array([2.0, 1.0]),
+            'a_max': 12.0,
+            'a_min': 3.0,
+            'omega_xy_max': 3.0,
+            'time_scale': 5.0,
         }
 
     # Load DOB parameters
@@ -114,9 +122,32 @@ def setup_controller_3d(control_type, dob_type, params):
     return controller, dob
 
 
+class ScaledTrajectory:
+    """Time-scaled wrapper for HehnTrajectory.
+    Stretches time by factor s: real_duration = original_duration * s.
+    Position is interpolated; velocity/acceleration are scaled accordingly.
+    """
+    def __init__(self, traj, time_scale):
+        self._traj = traj
+        self._s = time_scale
+
+    def get_position(self, t):
+        return self._traj.get_position(t / self._s)
+
+    def get_velocity(self, t):
+        return self._traj.get_velocity(t / self._s) / self._s
+
+    def get_acceleration(self, t):
+        return self._traj.get_acceleration(t / self._s) / (self._s ** 2)
+
+    @property
+    def duration(self):
+        return self._traj.duration * self._s
+
+
 def setup_trajectory_3d(mode, params, state0):
     """Setup trajectory generator for 3DOF.
-    Returns: trajectory object (HehnTrajectory) or None for regulation.
+    Returns: trajectory object or None for regulation.
     """
     if mode == 'regulation':
         return None
@@ -124,7 +155,9 @@ def setup_trajectory_3d(mode, params, state0):
     # Tracking mode: use Hehn trajectory
     from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
 
-    qp = QuadParams(a_max=20.0, a_min=1.0, omega_xy_max=10.0)
+    tp = params['tracking_params']
+    qp = QuadParams(a_max=tp['a_max'], a_min=tp['a_min'],
+                    omega_xy_max=tp['omega_xy_max'])
     gen = HehnTrajectoryGenerator(qp=qp)
 
     # Initial state (3D: x, y=0, z)
@@ -133,10 +166,16 @@ def setup_trajectory_3d(mode, params, state0):
     acc0 = np.array([0.0, 0.0, 0.0])
 
     # Target from tracking params
-    target_2d = params['tracking_params']['target_position']
+    target_2d = tp['target_position']
     target = np.array([target_2d[0], 0.0, target_2d[1]])
 
     traj = gen.generate(pos0, vel0, acc0, target=target)
+
+    # Apply time scaling
+    time_scale = tp.get('time_scale', 1.0)
+    if time_scale != 1.0:
+        traj = ScaledTrajectory(traj, time_scale)
+
     return traj
 
 
