@@ -49,9 +49,9 @@ class AxisTrajectory:
         self.tf = 0.0
         self._solved = False
 
-    def solve(self, tol=1e-4, tf_max=20.0):
-        """Solve for minimum-time trajectory. Relaxed tolerance for real-time."""
-        if abs(self.w0)<tol and abs(self.v0)<tol and abs(self.a0)<tol:
+    def solve(self, tol=1e-6, tf_max=20.0):
+        """Solve for minimum-time trajectory."""
+        if abs(self.w0)<1e-6 and abs(self.v0)<1e-6 and abs(self.a0)<1e-6:
             self.tf=0; self._solved=True; return 0.0
         if self.j<1e-12:
             self.tf=tf_max; self._solved=True; return self.tf
@@ -61,9 +61,6 @@ class AxisTrajectory:
             r = self._bisect(gen, tf_min, tol, tf_max)
             if r is not None:
                 results.append(r)
-                # Early exit if good enough
-                if r[0] < tf_min * 1.5:
-                    break
 
         if results:
             self.tf, self._segs = min(results, key=lambda x: x[0])
@@ -98,13 +95,12 @@ class AxisTrajectory:
             else:
                 return None
 
-        # Reduced iterations for real-time (30 is enough for 1e-4 tolerance)
-        for _ in range(30):
+        for _ in range(50):
             mid = 0.5*(lo+hi)
             wm, sm = gen(mid)
             if wm is None:
                 lo = mid; continue
-            if abs(wm) < tol or (hi-lo) < tol*0.1:
+            if abs(wm) < tol or (hi-lo) < tol*0.01:
                 return mid, sm
             if wm * wlo > 0:
                 lo, wlo = mid, wm
@@ -249,10 +245,10 @@ class AxisTrajectory:
                     _,s,w = vf(1); return w+1e8*abs(v1f), s
 
             flo,fhi,vlo = 0.0,1.0,v0f
-            for _ in range(15):  # Reduced from 50
+            for _ in range(25):
                 fm = 0.5*(flo+fhi)
                 vm,segs,wm = vf(fm)
-                if abs(vm)<1e-6 or (fhi-flo)<1e-6:
+                if abs(vm)<1e-8 or (fhi-flo)<1e-8:
                     return wm, segs
                 if vm*vlo>0: flo,vlo = fm,vm
                 else: fhi = fm
@@ -297,19 +293,18 @@ class HehnTrajectoryGenerator:
         # Determine which axes are active
         active = [abs(p0[i])>1e-4 or abs(v0[i])>1e-4 or abs(a0[i])>1e-4 for i in range(3)]
 
-        # Reduced search: only 3 zm values
-        for zm in [zb, (zb-0.1)/2, max(zb+0.1,-0.1)]:
+        # Search over z_ddot_min values
+        for zm in [zb, (zb-0.1)/2, max(zb+0.1,-0.1), zb*0.3, zb*0.7]:
             dp = DecouplingParams(0.5,0.5,zm,dp0.a0)
             azl,azh = 0.1,0.9
 
-            # Reduced iterations: 5 instead of 15
-            for _ in range(5):
+            for _ in range(8):
                 dp.alpha_z = 0.5*(azl+azh)
                 axl,axh = 0.1,0.9
 
-                # Inner: sync x and y (reduced to 5 iterations)
+                # Inner: sync x and y
                 if active[0] and active[1]:
-                    for _ in range(5):
+                    for _ in range(8):
                         dp.alpha_x = 0.5*(axl+axh)
                         tx,ty = self._qt(p0,v0,a0,dp,[0,1])
                         if tx>ty: axh=dp.alpha_x
