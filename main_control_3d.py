@@ -360,9 +360,8 @@ def main():
             if control_mode == 'tracking':
                 # Tracking: NMPC generates trajectory and returns p_des, v_des
                 state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
-                acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
                 status, w_cmd, p_des, v_des = controller.solve_for_trajectory(
-                    s_body, state_2d, acc_est, t_now)
+                    s_body, state_2d, t_now)
             else:
                 status, w_cmd = controller.solve(s_body, ref)
 
