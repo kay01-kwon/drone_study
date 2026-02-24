@@ -95,12 +95,12 @@ class AxisTrajectory:
             else:
                 return None
 
-        for _ in range(30):
+        for _ in range(15):
             mid = 0.5*(lo+hi)
             wm, sm = gen(mid)
             if wm is None:
                 lo = mid; continue
-            if abs(wm) < tol or (hi-lo) < 1e-6:
+            if abs(wm) < tol or (hi-lo) < 1e-4:
                 return mid, sm
             if wm * wlo > 0:
                 lo, wlo = mid, wm
@@ -273,6 +273,13 @@ class HehnTrajectoryGenerator:
         if dist < 0.1:
             optimize = False
 
+        # Skip optimization when lateral motion is small (real-time tracking mode)
+        # The expensive part is x-z synchronization; if x,y are small, use defaults
+        lateral_dist = np.sqrt(p0[0]**2 + p0[1]**2)
+        lateral_vel = np.sqrt(vel0[0]**2 + vel0[1]**2)
+        if lateral_dist < 0.3 and lateral_vel < 0.6:
+            optimize = False
+
         if dp is None: dp = DecouplingParams()
         if optimize: dp = self._opt(p0,vel0,acc0,dp)
         xa,ya,zlo,zhi,jm = compute_axis_constraints(self.qp,dp)
@@ -293,23 +300,23 @@ class HehnTrajectoryGenerator:
         # Determine which axes are active
         active = [abs(p0[i])>1e-4 or abs(v0[i])>1e-4 or abs(a0[i])>1e-4 for i in range(3)]
 
-        # Search over z_ddot_min values (reduced for speed)
-        for zm in [zb, zb*0.5, max(zb+0.1,-0.1)]:
+        # Search over z_ddot_min values (minimal for real-time)
+        for zm in [zb, zb*0.5]:
             dp = DecouplingParams(0.5,0.5,zm,dp0.a0)
             azl,azh = 0.1,0.9
 
-            for _ in range(5):
+            for _ in range(3):
                 dp.alpha_z = 0.5*(azl+azh)
                 axl,axh = 0.1,0.9
 
                 # Inner: sync x and y
                 if active[0] and active[1]:
-                    for _ in range(5):
+                    for _ in range(3):
                         dp.alpha_x = 0.5*(axl+axh)
                         tx,ty = self._qt(p0,v0,a0,dp,[0,1])
                         if tx>ty: axh=dp.alpha_x
                         else: axl=dp.alpha_x
-                        if (axh-axl)<0.08: break
+                        if (axh-axl)<0.15: break
                 elif active[0] and not active[1]:
                     dp.alpha_x = 0.9
                 elif active[1] and not active[0]:
@@ -330,7 +337,7 @@ class HehnTrajectoryGenerator:
                 elif h_axes and not active[2]:
                     dp.alpha_z = 0.1
                     break
-                if (azh-azl)<0.08: break
+                if (azh-azl)<0.15: break
 
             dp.alpha_z = 0.5*(azl+azh)
             tf = max(self._qt(p0,v0,a0,dp,[0,1,2]))
