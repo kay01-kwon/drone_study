@@ -461,12 +461,21 @@ def main():
     # NMPC solve time statistics
     if control_type == 'nmpc' and len(nmpc_solve_times) > 0:
         solve_times_ms = np.array(nmpc_solve_times) * 1000
-        print(f"\nNMPC Solve Time Statistics:")
+        print(f"\nNMPC Solve Time Statistics (All):")
         print(f"  Mean:   {np.mean(solve_times_ms):.3f} ms")
         print(f"  Std:    {np.std(solve_times_ms):.3f} ms")
         print(f"  Max:    {np.max(solve_times_ms):.3f} ms")
         print(f"  Min:    {np.min(solve_times_ms):.3f} ms")
-        print(f"  Sim dt: {dt*1000:.1f} ms")
+
+        # Statistics excluding first 10 samples (initial trajectory)
+        if len(solve_times_ms) > 10:
+            solve_times_after = solve_times_ms[10:]
+            print(f"\nNMPC Solve Time Statistics (Excluding first 10):")
+            print(f"  Mean:   {np.mean(solve_times_after):.3f} ms")
+            print(f"  Max:    {np.max(solve_times_after):.3f} ms")
+            print(f"  Min:    {np.min(solve_times_after):.3f} ms")
+
+        print(f"\n  Sim dt: {dt*1000:.1f} ms")
         realtime_ratio = (dt * 1000) / np.mean(solve_times_ms)
         print(f"  Real-time ratio: {realtime_ratio:.1f}x (>1 means real-time capable)")
 

@@ -253,7 +253,7 @@ class S550_3DOF_ocp:
                 if t_rel_check < self.traj.duration:
                     p_ref, _ = self._get_reference(t_rel_check)
                     pos_err = np.linalg.norm(state_2d[0:2] - p_ref)
-                    if pos_err > 0.02:  # Poor tracking: regenerate from actual state
+                    if pos_err > 0.01:  # Poor tracking: regenerate from actual state
                         need_replan = True
                     # else: good tracking, keep using existing trajectory
                 else:
