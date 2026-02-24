@@ -1,0 +1,31 @@
+# Nominal Parameters for 3DOF NMPC (x, z, theta)
+
+dynamic_params:
+  m: 2.9  # Mass [kg]
+  MoiArray: [0.06, 0.06, 0.09]  # Moment of inertia [kg*m^2]
+  com_offset: [-0.01, 0.005, 0.0]  # Center of mass offset [m]
+
+drone_params:
+  arm_length: 0.265  # Arm length [m]
+  motor_const: 1.465e-7  # Motor thrust constant
+  moment_const: 0.01569  # Motor moment constant
+
+rotor_params:
+  p: [25.16687, 0.003933, 515.605]  # Rotor model parameters
+  w_rotor_min: 2000  # Minimum rotor speed [RPM]
+  w_rotor_max: 7200  # Maximum rotor speed [RPM]
+  alpha_rotor_max: 15000  # Maximum rotor acceleration [RPM/s]
+  jerk_rotor_max: 250000  # Maximum rotor jerk [RPM/s^2]
+  num_rotors: 3  # Number of rotors (3 groups for 3DOF)
+
+nmpc_params:
+  t_horizon: 1.0
+  n_nodes: 20
+  QArray: [ 2.0, 10.0,         # px, pz
+            1.0, 7.0,          # vx, vz
+            10.0,              # th (pitch)
+            5.0 ]              # q (pitch rate)
+  RArray: 0.1                  # u1, u2, u3
+
+regulation:
+  setpoint_position: [0.0, 1.0]  # [x, z] target [m]

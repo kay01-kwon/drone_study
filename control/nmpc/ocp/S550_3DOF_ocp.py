@@ -14,9 +14,6 @@ class S550_3DOF_ocp:
             J = np.array([0.06, 0.06, 0.08])
             DynParam = {'m': m, 'MoiArray': J}
 
-        u_max = 1.4765e-7 * 7300.0**2
-        u_min = 1.4765e-7 * 2000.0**2
-
         if DroneParam is None:
             l = 0.265
             self.C_T = 1.465e-7
@@ -26,8 +23,12 @@ class S550_3DOF_ocp:
                           'moment_const':k_m}
         else:
             self.C_T = DroneParam['motor_const']
-            u_max = self.C_T * 7300.0**2
-            u_min = self.C_T * 2000.0**2
+
+        # Default rotor speed limits
+        w_max = 7200.0
+        w_min = 2000.0
+        u_max = self.C_T * w_max**2
+        u_min = self.C_T * w_min**2
 
         if MpcParam is None:
             t_horizon = 0.20                # Time horizon
@@ -105,21 +106,149 @@ class S550_3DOF_ocp:
         self.ocp.solver_options.print_level = 0                 # 0 : Do not print
         self.ocp.solver_options.nlp_solver_type = 'SQP_RTI'
         self.ocp.solver_options.nlp_solver_max_iter = 100
-        # self.ocp.solver_options.qp_solver_cond_N = n_nodes
-        # self.ocp.solver_options.qp_solver_warm_start = 1
-        self.ocp.solver_options.globalization = 'MERIT_BACKTRACKING'
-        self.ocp.solver_options.regularize_method = 'PROJECT'
         self.ocp.solver_options.tf = t_horizon
         self.ocp.solver_options.N_horizon = n_nodes
 
-        # self.ocp_solver = AcadosOcpSolver(self.ocp)
-        # generate json file and generate cython
         self.solver_json = 'acados_ocp_' + self.ocp.model.name + '.json'
-        AcadosOcpSolver.generate(self.ocp, json_file = self.solver_json)
-        AcadosOcpSolver.build(self.ocp.code_export_directory, with_cython=True)
-        self.ocp_solver = AcadosOcpSolver.create_cython_solver(self.solver_json)
+        self.ocp_solver = AcadosOcpSolver(self.ocp, json_file=self.solver_json)
         # Store state trajectory for warm start
         self.previous_states = None
 
+        self.nx = nx
+        self.nu = nu
+        self.N = n_nodes
+        self.T = t_horizon
         self.ref_nmpc = np.zeros((6,))
-        
+
+        # Hover thrust per group: mg/6 (hexarotor: 3 groups × 2 motors)
+        self.u_hover = DynParam['m'] * 9.81 / 6.0
+
+    def solve(self, state, ref, u_prev=None):
+        """
+        Solve OCP for regulation (fixed reference).
+        :param state: [px, pz, vx_body, vz_body, th, q]
+        :param ref: [px_des, pz_des, vx_des, vz_des]
+        :param u_prev: previous thrust [u1, u2, u3] (for warm start reference)
+        :return: (status, w_cmd)
+        """
+        if u_prev is None:
+            u_prev = np.array([self.u_hover]*self.nu)
+
+        # Build state reference: position + velocity desired, th=0, q=0
+        self.ref_nmpc[0:4] = ref[0:4]
+        self.ref_nmpc[4] = 0.0   # th_des = 0
+        self.ref_nmpc[5] = 0.0   # q_des = 0
+
+        y_ref = np.concatenate((self.ref_nmpc, u_prev))
+        y_ref_N = self.ref_nmpc
+
+        # Transform body velocity to world velocity
+        state_transformed = self._state_transform(state)
+
+        # Set initial state constraint
+        self.ocp_solver.set(0, 'lbx', state_transformed)
+        self.ocp_solver.set(0, 'ubx', state_transformed)
+
+        # Warm start with previous trajectory or constant reference
+        if self.previous_states is not None:
+            for stage in range(self.N):
+                if stage < self.N - 1:
+                    prev_state = self.previous_states[stage + 1]
+                    y_ref_warm = np.concatenate((prev_state, u_prev))
+                    self.ocp_solver.set(stage, 'y_ref', y_ref_warm)
+                else:
+                    self.ocp_solver.set(stage, 'y_ref', y_ref)
+            self.ocp_solver.set(self.N, 'y_ref', y_ref_N)
+        else:
+            for stage in range(self.N):
+                self.ocp_solver.set(stage, 'y_ref', y_ref)
+            self.ocp_solver.set(self.N, 'y_ref', y_ref_N)
+
+        status = self.ocp_solver.solve()
+
+        # Store state trajectory for warm start
+        self.previous_states = []
+        for stage in range(self.N + 1):
+            self.previous_states.append(self.ocp_solver.get(stage, 'x').copy())
+
+        u = self.ocp_solver.get(0, 'u')
+        w_cmd = np.sqrt(u / self.C_T)
+
+        return status, w_cmd
+
+    def solve_for_trajectory(self, state, t_curr, traj, u_prev=None):
+        """
+        Solve OCP for trajectory tracking along prediction horizon.
+        :param state: [px, pz, vx_body, vz_body, th, q]
+        :param t_curr: Current time
+        :param traj: HehnTrajectory object with get_position/get_velocity/get_acceleration
+        :param u_prev: previous thrust [u1, u2, u3]
+        :return: (status, w_cmd)
+        """
+        if u_prev is None:
+            u_prev = np.array([self.u_hover]*self.nu)
+
+        dt = self.T / self.N
+
+        # Transform body velocity to world velocity
+        state_transformed = self._state_transform(state)
+
+        # Set initial state constraint
+        self.ocp_solver.set(0, 'lbx', state_transformed)
+        self.ocp_solver.set(0, 'ubx', state_transformed)
+
+        # Set reference for each stage along prediction horizon
+        for stage in range(self.N):
+            t_ref = t_curr + stage * dt
+            ref_stage = self._traj_to_ref(traj, t_ref)
+            y_ref = np.concatenate((ref_stage, u_prev))
+            self.ocp_solver.set(stage, 'y_ref', y_ref)
+
+        # Terminal reference
+        t_ref_N = t_curr + self.T
+        ref_N = self._traj_to_ref(traj, t_ref_N)
+        self.ocp_solver.set(self.N, 'y_ref', ref_N)
+
+        status = self.ocp_solver.solve()
+
+        # Store state trajectory for warm start
+        self.previous_states = []
+        for stage in range(self.N + 1):
+            self.previous_states.append(self.ocp_solver.get(stage, 'x').copy())
+
+        u = self.ocp_solver.get(0, 'u')
+        w_cmd = np.sqrt(u / self.C_T)
+
+        return status, w_cmd
+
+    def _traj_to_ref(self, traj, t):
+        """Convert hehn trajectory to NMPC reference [px, pz, vx, vz, th, q]."""
+        pos = traj.get_position(t)    # [x, y, z] (3D)
+        vel = traj.get_velocity(t)    # [vx, vy, vz] (3D)
+
+        # 3DOF: extract x and z
+        ref = np.zeros(6)
+        ref[0] = pos[0]   # px
+        ref[1] = pos[2]   # pz (use z from 3D)
+        ref[2] = vel[0]   # vx
+        ref[3] = vel[2]   # vz
+        ref[4] = 0.0      # th_des = 0 (let NMPC compute optimal pitch)
+        ref[5] = 0.0      # q_des = 0
+        return ref
+
+    def _state_transform(self, state):
+        """Transform body velocity to world velocity for NMPC.
+        Input state:  [px, pz, vx_body, vz_body, th, q]
+        Output state: [px, pz, vx_world, vz_world, th, q]
+        """
+        from utils.math_tool import pitch_to_rotm
+        th = state[4]
+        R = pitch_to_rotm(th)
+        v_body = state[2:4]
+        v_world = R @ v_body
+        state_new = state.copy()
+        state_new[2:4] = v_world
+        return state_new
+
+    def get_json_file_name(self):
+        return self.solver_json

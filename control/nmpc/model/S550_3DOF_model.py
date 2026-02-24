@@ -28,7 +28,7 @@ class S550_3DOF_model:
         self.th = cs.MX.sym('th', 1)    # pitch
         self.q = cs.MX.sym('q', 1)      # pitch rate
         self.x = cs.vertcat(self.p, self.v,
-                            self.q, self.th)
+                            self.th, self.q)
         self.x_dim = 6
 
         # Desired rotor thrusts (dim: 3)
@@ -78,14 +78,15 @@ class S550_3DOF_model:
     def _v_dynamics(self):
         '''
         dvdt = R @ f/m + g_vec
+        Hexarotor has 3 groups of 2 motors each, so total thrust = 2*(u1+u2+u3)
         :return:
         '''
 
-        # Total thrust
-        f_col = (self.u1 + self.u2 + self.u3)
+        # Total thrust (factor of 2 for paired motors in hexarotor)
+        f_col = 2.0 * (self.u1 + self.u2 + self.u3)
 
-        # Force in 2 dim
-        f = cs.vertcat(0.0, 0.0, f_col)
+        # Force in 2D (thrust along body z-axis = e2)
+        f = cs.vertcat(0.0, f_col)
         acc_input = f/self.m
 
         g_vec = cs.vertcat(0.0, -9.81)
@@ -111,12 +112,12 @@ class S550_3DOF_model:
 
     def _control_alloc_moment(self):
         '''
-        Thrust to moment
+        Thrust to moment (hexarotor 3-group)
+        Each group has 2 motors; pitch moment arm = 2*l*sin(60°) = l*sqrt(3)
         :return: moment
         '''
 
-        My = self.l * (-self.u1
-                       +self.u3)
+        My = self.l * cs.sqrt(3.0) * (-self.u1 + self.u3)
 
         return My
 
