@@ -35,3 +35,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated output files
+results_3d.png
+*.png
