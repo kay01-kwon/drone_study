@@ -270,24 +270,17 @@ class S550_3DOF_ocp:
         return status, w_cmd, p_des, v_des
 
     def _generate_trajectory(self, state_2d, acc_2d, t_now):
-        """Generate Hehn trajectory from error w0 = target - current_pos.
+        """Generate Hehn trajectory from current position to target.
 
-        The Hehn trajectory plans for error w, where:
-        - w = target - pos
-        - dw/dt = -v_drone (error decreases as drone moves toward target)
-        - d²w/dt² = -a_drone
-
-        So we pass negated velocity and acceleration as initial conditions.
+        Uses HehnTrajectory directly: pos0 -> target.
+        get_position(t) returns desired position, get_velocity(t) returns
+        desired velocity. No sign conversions needed.
         """
-        pos = np.array([state_2d[0], 0.0, state_2d[1]])
-        w0 = self.target_3d - pos
+        pos0 = np.array([state_2d[0], 0.0, state_2d[1]])
+        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
+        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
 
-        # Error rate: dw/dt = -v_drone
-        vel0 = -np.array([state_2d[2], 0.0, state_2d[3]])
-        # Error acceleration: d²w/dt² = -a_drone
-        acc0 = -np.array([acc_2d[0], 0.0, acc_2d[1]])
-
-        traj_raw = self.traj_gen.generate(w0, vel0, acc0)
+        traj_raw = self.traj_gen.generate(pos0, vel0, acc0, target=self.target_3d)
 
         if self.time_scale != 1.0:
             self.traj = ScaledTrajectory(traj_raw, self.time_scale)
@@ -297,30 +290,27 @@ class S550_3DOF_ocp:
         self.t_start = t_now
 
     def _traj_to_ref(self, t):
-        """Convert error-based Hehn trajectory to NMPC reference.
-        Note: traj.get_velocity() returns dw/dt (error rate).
-        Since w = target - pos, dw/dt = -v_drone, so v_des = -dw/dt.
+        """Get NMPC reference directly from trajectory.
+        get_position(t) = desired position, get_velocity(t) = desired velocity.
         """
-        err = self.traj.get_position(t)
+        pos = self.traj.get_position(t)
         vel = self.traj.get_velocity(t)
 
         ref = np.zeros(6)
-        ref[0] = self.target_2d[0] - err[0]   # px_des = target_x - error_x
-        ref[1] = self.target_2d[1] - err[2]   # pz_des = target_z - error_z
-        ref[2] = -vel[0]                       # vx_des = -dw/dt
-        ref[3] = -vel[2]                       # vz_des = -dw/dt
-        ref[4] = 0.0                           # th_des
-        ref[5] = 0.0                           # q_des
+        ref[0] = pos[0]    # px_des
+        ref[1] = pos[2]    # pz_des (3D z-axis -> 2D z)
+        ref[2] = vel[0]    # vx_des
+        ref[3] = vel[2]    # vz_des
+        ref[4] = 0.0       # th_des
+        ref[5] = 0.0       # q_des
         return ref
 
     def _get_reference(self, t_rel):
-        """Get p_des, v_des for logging at current time.
-        Note: v_des = -dw/dt since dw/dt = -v_drone.
-        """
-        err = self.traj.get_position(t_rel)
+        """Get p_des, v_des for logging at current time."""
+        pos = self.traj.get_position(t_rel)
         vel = self.traj.get_velocity(t_rel)
-        p_des = self.target_2d - np.array([err[0], err[2]])
-        v_des = -np.array([vel[0], vel[2]])  # v_drone = -dw/dt
+        p_des = np.array([pos[0], pos[2]])
+        v_des = np.array([vel[0], vel[2]])
         return p_des, v_des
 
     def _state_transform(self, state):
