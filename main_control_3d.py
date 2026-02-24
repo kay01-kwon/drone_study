@@ -122,29 +122,6 @@ def setup_controller_3d(control_type, dob_type, params):
     return controller, dob
 
 
-class ScaledTrajectory:
-    """Time-scaled wrapper for HehnTrajectory.
-    Stretches time by factor s: real_duration = original_duration * s.
-    Position is interpolated; velocity/acceleration are scaled accordingly.
-    """
-    def __init__(self, traj, time_scale):
-        self._traj = traj
-        self._s = time_scale
-
-    def get_position(self, t):
-        return self._traj.get_position(t / self._s)
-
-    def get_velocity(self, t):
-        return self._traj.get_velocity(t / self._s) / self._s
-
-    def get_acceleration(self, t):
-        return self._traj.get_acceleration(t / self._s) / (self._s ** 2)
-
-    @property
-    def duration(self):
-        return self._traj.duration * self._s
-
-
 def estimate_acceleration(state, w_rotor, C_T, m):
     """
     Model-based acceleration estimation from current thrust and pitch.
@@ -170,86 +147,6 @@ def estimate_acceleration(state, w_rotor, C_T, m):
     a_world = R @ (f_body / m) + g_vec
 
     return a_world  # [ax, az]
-
-
-class TrajectoryManager:
-    """Manages Hehn trajectory generation with periodic replanning.
-
-    Uses error representation: w0 = target - current_pos.
-    The Hehn trajectory drives w from w0 to 0 (error → 0).
-    Replans at fixed interval (default 100ms) with fresh w0, vel0, acc0.
-    """
-
-    def __init__(self, params, target_2d):
-        from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
-
-        tp = params['tracking_params']
-        self.qp = QuadParams(a_max=tp['a_max'], a_min=tp['a_min'],
-                             omega_xy_max=tp['omega_xy_max'])
-        self.gen = HehnTrajectoryGenerator(qp=self.qp)
-        self.time_scale = tp.get('time_scale', 1.0)
-        self.target = np.array([target_2d[0], 0.0, target_2d[1]])
-        self.target_2d = np.array(target_2d)
-        self.traj = None
-        self.t_start = 0.0
-        self.replan_interval = 0.1  # 100ms (10Hz)
-
-    def generate(self, state_2d, acc_2d, t_now):
-        """Generate trajectory from error w0 = target - current_pos.
-        vel0, acc0 are current world-frame values (no sign flip).
-        """
-        pos = np.array([state_2d[0], 0.0, state_2d[1]])
-        w0 = self.target - pos
-        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
-        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
-
-        traj_raw = self.gen.generate(w0, vel0, acc0)
-
-        if self.time_scale != 1.0:
-            self.traj = ScaledTrajectory(traj_raw, self.time_scale)
-        else:
-            self.traj = traj_raw
-
-        self.t_start = t_now
-
-    def should_replan(self, t_now):
-        """Check if replan interval has elapsed."""
-        return (t_now - self.t_start) >= self.replan_interval
-
-    def get_reference(self, t_now):
-        """Get desired [p_des, v_des] at current time.
-        p_des = target - error(t), v_des = trajectory velocity.
-        """
-        t_rel = t_now - self.t_start
-        err = self.traj.get_position(t_rel)
-        err_dot = self.traj.get_velocity(t_rel)
-        p_des = self.target_2d - np.array([err[0], err[2]])
-        v_des = np.array([err_dot[0], err_dot[2]])
-        return p_des, v_des
-
-    @property
-    def duration(self):
-        return self.traj.duration if self.traj else 0.0
-
-
-def setup_trajectory_3d(mode, params, state0):
-    """Setup trajectory generator for 3DOF.
-    Returns: TrajectoryManager object or None for regulation.
-    """
-    if mode == 'regulation':
-        return None
-
-    tp = params['tracking_params']
-    target_2d = tp['target_position']
-
-    traj_mgr = TrajectoryManager(params, target_2d)
-
-    # Initial trajectory with acc0 = 0 (drone at rest)
-    state_2d = np.array([state0[0], state0[1], state0[2], state0[3]])
-    acc_2d = np.array([0.0, 0.0])
-    traj_mgr.generate(state_2d, acc_2d, t_now=0.0)
-
-    return traj_mgr
 
 
 def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data):
@@ -381,11 +278,7 @@ def main():
     alpha_max = params['true_rotor_params']['alpha_rotor_max']
     num_rotors = params['true_rotor_params']['num_rotors']
 
-    # Setup trajectory for tracking mode
-    s_body_init = drone_sim_model.get_state(s_drone)
-    traj_mgr = setup_trajectory_3d(control_mode, params, s_body_init)
-
-    # Parameters for acceleration estimation (for replanning)
+    # Setup tracking mode for NMPC
     C_T = params['nominal_drone_params']['motor_const']
     m_nom = params['nominal_dynamic_params']['m']
 
@@ -393,8 +286,11 @@ def main():
         p_target = params['regulation_params']['setpoint_position']
         print(f"\nRegulation: target position x={p_target[0]:.2f}, z={p_target[1]:.2f} m")
     else:
+        target_2d = params['tracking_params']['target_position']
+        if control_type == 'nmpc':
+            controller.setup_tracking(params['tracking_params'], target_2d)
         print(f"\nTracking: Hehn trajectory, replan at 10Hz")
-        print(f"  Target: {params['tracking_params']['target_position']}")
+        print(f"  Target: {target_2d}")
 
     print(f"Simulation time: {tf:.1f} s, dt: {dt*1000:.1f} ms\n")
 
@@ -428,18 +324,7 @@ def main():
         if control_mode == 'regulation':
             p_des = params['regulation_params']['setpoint_position']
             v_des = np.array([0.0, 0.0])
-        else:
-            # Tracking: replan at 10Hz (100ms interval)
-            if traj_mgr.should_replan(t_now):
-                acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
-                from utils.math_tool import pitch_to_rotm
-                v_world = pitch_to_rotm(theta) @ v_body
-                state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
-                traj_mgr.generate(state_2d, acc_est, t_now)
-
-            p_des, v_des = traj_mgr.get_reference(t_now)
-
-        ref = np.concatenate([p_des, v_des])
+            ref = np.concatenate([p_des, v_des])
 
         # DOB estimate
         if dob is not None and i > 1:
@@ -450,24 +335,16 @@ def main():
         f_est = d_est[0:2]
         tau_est = d_est[2]
 
-        # Store history
-        pos_hist.append(p.copy())
-        vel_hist.append(v_body.copy())
-        pitch_hist.append(theta)
-        pitch_rate_hist.append(q)
-        pos_des_hist.append(p_des.copy())
-        vel_des_hist.append(v_des.copy())
-        w_rotor_hist.append(w_rotor.copy())
-        alpha_rotor_hist.append(alpha_rotor.copy())
-        f_est_hist.append(f_est.copy())
-        tau_est_hist.append(tau_est)
-
         # Compute control
         if control_type == 'nmpc':
-            if control_mode == 'tracking' and traj_mgr is not None:
-                t_rel = t_now - traj_mgr.t_start
-                status, w_cmd = controller.solve_for_trajectory(
-                    s_body, t_rel, traj_mgr.traj, traj_mgr.target_2d)
+            if control_mode == 'tracking':
+                # Tracking: NMPC generates trajectory and returns p_des, v_des
+                from utils.math_tool import pitch_to_rotm
+                v_world = pitch_to_rotm(theta) @ v_body
+                state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
+                acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
+                status, w_cmd, p_des, v_des = controller.solve_for_trajectory(
+                    s_body, state_2d, acc_est, t_now)
             else:
                 status, w_cmd = controller.solve(s_body, ref)
 
@@ -483,8 +360,25 @@ def main():
                 print(f"Warning: NMPC solver status {status} at t={t_now:.2f}s")
 
         elif control_type == 'pd':
+            if control_mode == 'tracking':
+                # PD tracking: just use target position
+                p_des = params['tracking_params']['target_position']
+                v_des = np.array([0.0, 0.0])
+                ref = np.concatenate([p_des, v_des])
             u = controller.compute_u(s_body, ref, d_est, dt)
             w_cmd = hexa_converter.compute_des_rotor_speed(u)
+
+        # Store history
+        pos_hist.append(p.copy())
+        vel_hist.append(v_body.copy())
+        pitch_hist.append(theta)
+        pitch_rate_hist.append(q)
+        pos_des_hist.append(p_des.copy())
+        vel_des_hist.append(v_des.copy())
+        w_rotor_hist.append(w_rotor.copy())
+        alpha_rotor_hist.append(alpha_rotor.copy())
+        f_est_hist.append(f_est.copy())
+        tau_est_hist.append(tau_est)
 
         # Simulation step
         t_ode = [t_sim[i], t_sim[i + 1]]

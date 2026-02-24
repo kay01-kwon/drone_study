@@ -4,6 +4,23 @@ from utils.math_tool import pitch_to_rotm
 from scipy.linalg import block_diag
 import numpy as np
 
+
+class ScaledTrajectory:
+    """Time-scaled wrapper for HehnTrajectory."""
+    def __init__(self, traj, time_scale):
+        self._traj = traj
+        self._s = time_scale
+
+    def get_position(self, t):
+        return self._traj.get_position(t / self._s)
+
+    def get_velocity(self, t):
+        return self._traj.get_velocity(t / self._s) / self._s
+
+    @property
+    def duration(self):
+        return self._traj.duration * self._s
+
 class S550_3DOF_ocp:
     def __init__(self, DynParam = None,
                  DroneParam = None,
@@ -123,6 +140,28 @@ class S550_3DOF_ocp:
         # Hover thrust per group: mg/6 (hexarotor: 3 groups × 2 motors)
         self.u_hover = DynParam['m'] * 9.81 / 6.0
 
+        # Trajectory generation (initialized via setup_tracking)
+        self.traj_gen = None
+        self.traj = None
+        self.target_2d = None
+        self.time_scale = 1.0
+        self.t_start = 0.0
+        self.replan_interval = 0.1  # 100ms (10Hz)
+
+    def setup_tracking(self, tracking_params, target_2d):
+        """Initialize Hehn trajectory generator for tracking mode."""
+        from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
+
+        qp = QuadParams(
+            a_max=tracking_params['a_max'],
+            a_min=tracking_params['a_min'],
+            omega_xy_max=tracking_params['omega_xy_max']
+        )
+        self.traj_gen = HehnTrajectoryGenerator(qp=qp)
+        self.target_2d = np.array(target_2d)
+        self.target_3d = np.array([target_2d[0], 0.0, target_2d[1]])
+        self.time_scale = tracking_params.get('time_scale', 1.0)
+
     def solve(self, state, ref, u_prev=None):
         """
         Solve OCP for regulation (fixed reference).
@@ -176,19 +215,24 @@ class S550_3DOF_ocp:
 
         return status, w_cmd
 
-    def solve_for_trajectory(self, state, t_curr, traj, target_2d, u_prev=None):
+    def solve_for_trajectory(self, state, state_2d, acc_2d, t_now, u_prev=None):
         """
-        Solve OCP for trajectory tracking along prediction horizon.
+        Solve OCP for trajectory tracking with internal trajectory generation.
         :param state: [px, pz, vx_body, vz_body, th, q]
-        :param t_curr: Current time relative to trajectory start
-        :param traj: HehnTrajectory (error-based: goes from w0 to 0)
-        :param target_2d: [x_target, z_target] world-frame target
+        :param state_2d: [px, pz, vx_world, vz_world] for trajectory generation
+        :param acc_2d: [ax, az] world-frame acceleration
+        :param t_now: Current simulation time
         :param u_prev: previous thrust [u1, u2, u3]
-        :return: (status, w_cmd)
+        :return: (status, w_cmd, p_des, v_des)
         """
         if u_prev is None:
             u_prev = np.array([self.u_hover]*self.nu)
 
+        # Replan if interval elapsed
+        if (t_now - self.t_start) >= self.replan_interval or self.traj is None:
+            self._generate_trajectory(state_2d, acc_2d, t_now)
+
+        t_rel = t_now - self.t_start
         dt = self.T / self.N
 
         # Transform body velocity to world velocity
@@ -200,17 +244,20 @@ class S550_3DOF_ocp:
 
         # Set reference for each stage along prediction horizon
         for stage in range(self.N):
-            t_ref = t_curr + stage * dt
-            ref_stage = self._traj_to_ref(traj, t_ref, target_2d)
+            t_ref = t_rel + stage * dt
+            ref_stage = self._traj_to_ref(t_ref)
             y_ref = np.concatenate((ref_stage, u_prev))
             self.ocp_solver.set(stage, 'y_ref', y_ref)
 
         # Terminal reference
-        t_ref_N = t_curr + self.T
-        ref_N = self._traj_to_ref(traj, t_ref_N, target_2d)
+        t_ref_N = t_rel + self.T
+        ref_N = self._traj_to_ref(t_ref_N)
         self.ocp_solver.set(self.N, 'y_ref', ref_N)
 
         status = self.ocp_solver.solve()
+
+        # Get p_des, v_des at current time for logging
+        p_des, v_des = self._get_reference(t_rel)
 
         # Store state trajectory for warm start
         self.previous_states = []
@@ -220,25 +267,45 @@ class S550_3DOF_ocp:
         u = self.ocp_solver.get(0, 'u')
         w_cmd = np.sqrt(u / self.C_T)
 
-        return status, w_cmd
+        return status, w_cmd, p_des, v_des
 
-    def _traj_to_ref(self, traj, t, target_2d):
-        """Convert error-based Hehn trajectory to NMPC reference.
-        Trajectory is in error space (w0 → 0), so:
-          p_des = target - traj.get_position(t)
-          v_des = traj.get_velocity(t)
-        """
-        err = traj.get_position(t)    # error [x, y, z] (3D), goes to 0
-        vel = traj.get_velocity(t)    # [vx, vy, vz] (3D)
+    def _generate_trajectory(self, state_2d, acc_2d, t_now):
+        """Generate Hehn trajectory from error w0 = target - current_pos."""
+        pos = np.array([state_2d[0], 0.0, state_2d[1]])
+        w0 = self.target_3d - pos
+        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
+        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
+
+        traj_raw = self.traj_gen.generate(w0, vel0, acc0)
+
+        if self.time_scale != 1.0:
+            self.traj = ScaledTrajectory(traj_raw, self.time_scale)
+        else:
+            self.traj = traj_raw
+
+        self.t_start = t_now
+
+    def _traj_to_ref(self, t):
+        """Convert error-based Hehn trajectory to NMPC reference."""
+        err = self.traj.get_position(t)
+        vel = self.traj.get_velocity(t)
 
         ref = np.zeros(6)
-        ref[0] = target_2d[0] - err[0]   # px_des = target_x - error_x
-        ref[1] = target_2d[1] - err[2]   # pz_des = target_z - error_z
-        ref[2] = vel[0]                   # vx_des
-        ref[3] = vel[2]                   # vz_des
-        ref[4] = 0.0                      # th_des
-        ref[5] = 0.0                      # q_des
+        ref[0] = self.target_2d[0] - err[0]   # px_des = target_x - error_x
+        ref[1] = self.target_2d[1] - err[2]   # pz_des = target_z - error_z
+        ref[2] = vel[0]                        # vx_des
+        ref[3] = vel[2]                        # vz_des
+        ref[4] = 0.0                           # th_des
+        ref[5] = 0.0                           # q_des
         return ref
+
+    def _get_reference(self, t_rel):
+        """Get p_des, v_des at time t_rel for logging."""
+        err = self.traj.get_position(t_rel)
+        vel = self.traj.get_velocity(t_rel)
+        p_des = self.target_2d - np.array([err[0], err[2]])
+        v_des = np.array([vel[0], vel[2]])
+        return p_des, v_des
 
     def _state_transform(self, state):
         """Transform body velocity to world velocity for NMPC.
