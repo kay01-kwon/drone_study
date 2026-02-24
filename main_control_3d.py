@@ -365,12 +365,12 @@ def main():
             else:
                 status, w_cmd = controller.solve(s_body, ref)
 
-            if dob is not None:
-                # DOB compensation: subtract disturbance moment from NMPC output
-                # Delay compensation until DOB has converged (t > 2s)
+            if dob is not None and t_now > 1.0:
+                # DOB compensation: subtract disturbance from NMPC output
+                # Wait until t > 1.0s for DOB to converge after liftoff
                 u_mpc = hexa_converter.compute_u(w_cmd)
                 u_comp = u_mpc.copy()
-                u_comp[0] -= d_est[1]
+                u_comp[0] -= d_est[1]              # subtract f_ext_z from Fz
                 u_comp[1] -= d_est[2]              # subtract tau_ext from My
                 w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
 

@@ -130,6 +130,7 @@ class S550_3DOF_ocp:
         self.ocp_solver = AcadosOcpSolver(self.ocp, json_file=self.solver_json)
         # Store state trajectory for warm start
         self.previous_states = None
+        self.previous_u0 = None
 
         self.nx = nx
         self.nu = nu
@@ -146,7 +147,7 @@ class S550_3DOF_ocp:
         self.target_2d = None
         self.time_scale = 1.0
         self.t_start = 0.0
-        self.replan_interval = 0.01  # 100ms (100Hz)
+        self.replan_interval = 0.5   # 500ms (2Hz)
 
     def setup_tracking(self, tracking_params, target_2d):
         """Initialize Hehn trajectory generator for tracking mode."""
@@ -205,12 +206,13 @@ class S550_3DOF_ocp:
 
         status = self.ocp_solver.solve()
 
-        # Store state trajectory for warm start
+        # Store state trajectory and control for warm start
         self.previous_states = []
         for stage in range(self.N + 1):
             self.previous_states.append(self.ocp_solver.get(stage, 'x').copy())
 
         u = self.ocp_solver.get(0, 'u')
+        self.previous_u0 = u.copy()
         w_cmd = np.sqrt(u / self.C_T)
 
         return status, w_cmd
@@ -227,29 +229,25 @@ class S550_3DOF_ocp:
         if u_prev is None:
             u_prev = np.array([self.u_hover]*self.nu)
 
-        # Smart replan: only replan if needed
-        need_replan = self.traj is None
-        if not need_replan and (t_now - self.t_start) >= self.replan_interval:
-            t_rel = t_now - self.t_start
-            # Check if trajectory has ended
-            traj_ended = t_rel >= self.traj.duration
-            # Check distance to target
-            dist_to_target = np.linalg.norm(state_2d[0:2] - self.target_2d)
+        # Use previous optimal control for reference if available
+        u_ref = self.previous_u0 if self.previous_u0 is not None else u_prev
 
-            if traj_ended and dist_to_target < 0.02:
-                # Trajectory ended and close to target: no replan needed
-                need_replan = False
-            else:
-                # Check tracking error
-                p_des_traj, v_des_traj = self._get_reference(t_rel)
-                pos_err = np.linalg.norm(state_2d[0:2] - p_des_traj)
-                vel_err = np.linalg.norm(state_2d[2:4] - v_des_traj)
-                # Only replan if tracking error is significant
-                if pos_err > 0.03 or vel_err > 0.08:
+        # Check if we should use regulation (target hold) instead of trajectory
+        dist_to_target = np.linalg.norm(state_2d[0:2] - self.target_2d)
+        vel_mag = np.linalg.norm(state_2d[2:4])
+        use_regulation = (dist_to_target < 0.05 and vel_mag < 0.1)
+
+        if not use_regulation:
+            # Only replan when: no trajectory exists, or trajectory has ended
+            need_replan = self.traj is None
+            if not need_replan:
+                t_rel_check = t_now - self.t_start
+                traj_ended = t_rel_check >= self.traj.duration
+                if traj_ended and dist_to_target > 0.05:
                     need_replan = True
 
-        if need_replan:
-            self._generate_trajectory(state_2d, t_now)
+            if need_replan:
+                self._generate_trajectory(state_2d, t_now)
 
         t_rel = t_now - self.t_start
         dt = self.T / self.N
@@ -261,29 +259,44 @@ class S550_3DOF_ocp:
         self.ocp_solver.set(0, 'lbx', state_transformed)
         self.ocp_solver.set(0, 'ubx', state_transformed)
 
-        # Set reference for each stage along prediction horizon
-        for stage in range(self.N):
-            t_ref = t_rel + stage * dt
-            ref_stage = self._traj_to_ref(t_ref)
-            y_ref = np.concatenate((ref_stage, u_prev))
-            self.ocp_solver.set(stage, 'y_ref', y_ref)
+        if use_regulation:
+            # Near target: use fixed-point regulation reference
+            ref_reg = np.zeros(6)
+            ref_reg[0] = self.target_2d[0]
+            ref_reg[1] = self.target_2d[1]
+            for stage in range(self.N):
+                y_ref = np.concatenate((ref_reg, u_ref))
+                self.ocp_solver.set(stage, 'y_ref', y_ref)
+            self.ocp_solver.set(self.N, 'y_ref', ref_reg)
+        else:
+            # Set reference for each stage along prediction horizon
+            for stage in range(self.N):
+                t_ref = t_rel + stage * dt
+                ref_stage = self._traj_to_ref(t_ref)
+                y_ref = np.concatenate((ref_stage, u_ref))
+                self.ocp_solver.set(stage, 'y_ref', y_ref)
 
-        # Terminal reference
-        t_ref_N = t_rel + self.T
-        ref_N = self._traj_to_ref(t_ref_N)
-        self.ocp_solver.set(self.N, 'y_ref', ref_N)
+            # Terminal reference
+            t_ref_N = t_rel + self.T
+            ref_N = self._traj_to_ref(t_ref_N)
+            self.ocp_solver.set(self.N, 'y_ref', ref_N)
 
         status = self.ocp_solver.solve()
 
         # Get p_des, v_des at current time for logging
-        p_des, v_des = self._get_reference(t_rel)
+        if use_regulation:
+            p_des = self.target_2d.copy()
+            v_des = np.zeros(2)
+        else:
+            p_des, v_des = self._get_reference(t_rel)
 
-        # Store state trajectory for warm start
+        # Store state trajectory and control for warm start
         self.previous_states = []
         for stage in range(self.N + 1):
             self.previous_states.append(self.ocp_solver.get(stage, 'x').copy())
 
         u = self.ocp_solver.get(0, 'u')
+        self.previous_u0 = u.copy()
         w_cmd = np.sqrt(u / self.C_T)
 
         return status, w_cmd, p_des, v_des
