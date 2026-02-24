@@ -332,7 +332,7 @@ class S550_3DOF_ocp:
             if t_rel < self.traj.duration:
                 p_ref, v_ref = self._get_reference(t_rel)
                 pos_err = np.linalg.norm(state_2d[0:2] - p_ref)
-                if pos_err < 0.1:  # Good tracking: use trajectory reference
+                if pos_err < 0.01:  # Good tracking: use trajectory reference
                     use_traj_ref = True
                     pos0 = np.array([p_ref[0], 0.0, p_ref[1]])
                     vel0 = np.array([v_ref[0], 0.0, v_ref[1]])
