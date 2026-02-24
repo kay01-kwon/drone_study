@@ -49,7 +49,8 @@ class AxisTrajectory:
         self.tf = 0.0
         self._solved = False
 
-    def solve(self, tol=1e-6, tf_max=50.0):
+    def solve(self, tol=1e-4, tf_max=20.0):
+        """Solve for minimum-time trajectory. Relaxed tolerance for real-time."""
         if abs(self.w0)<tol and abs(self.v0)<tol and abs(self.a0)<tol:
             self.tf=0; self._solved=True; return 0.0
         if self.j<1e-12:
@@ -60,12 +61,9 @@ class AxisTrajectory:
             r = self._bisect(gen, tf_min, tol, tf_max)
             if r is not None:
                 results.append(r)
-
-        if not results:
-            for gen, tf_min in self._generators():
-                r = self._bisect(gen, tf_min, tol, tf_max*10)
-                if r is not None:
-                    results.append(r)
+                # Early exit if good enough
+                if r[0] < tf_min * 1.5:
+                    break
 
         if results:
             self.tf, self._segs = min(results, key=lambda x: x[0])
@@ -76,7 +74,7 @@ class AxisTrajectory:
 
     def _bisect(self, gen, tf_min, tol, tf_max):
         lo = max(tf_min, 0.001)
-        hi = tf_max
+        hi = min(tf_max, lo + 10.0)  # Limit search range
         if lo >= hi: return None
         wlo, slo = gen(lo)
         whi, shi = gen(hi)
@@ -89,8 +87,10 @@ class AxisTrajectory:
             return hi, shi
 
         if wlo * whi > 0:
-            for m in [2, 5, 10]:
-                hi2 = tf_max * m
+            # Expand search range
+            for m in [2, 4]:
+                hi2 = hi * m
+                if hi2 > tf_max: hi2 = tf_max
                 w2, s2 = gen(hi2)
                 if w2 is not None and wlo * w2 <= 0:
                     hi, whi, shi = hi2, w2, s2
@@ -98,12 +98,13 @@ class AxisTrajectory:
             else:
                 return None
 
-        for _ in range(200):
+        # Reduced iterations for real-time (30 is enough for 1e-4 tolerance)
+        for _ in range(30):
             mid = 0.5*(lo+hi)
             wm, sm = gen(mid)
             if wm is None:
                 lo = mid; continue
-            if abs(wm) < tol or (hi-lo) < tol*0.01:
+            if abs(wm) < tol or (hi-lo) < tol*0.1:
                 return mid, sm
             if wm * wlo > 0:
                 lo, wlo = mid, wm
@@ -236,9 +237,9 @@ class AxisTrajectory:
 
             v0f,_,_ = vf(0)
             v1f,_,_ = vf(1)
-            if abs(v0f)<1e-8:
+            if abs(v0f)<1e-6:
                 _,s,w = vf(0); return w,s
-            if abs(v1f)<1e-8:
+            if abs(v1f)<1e-6:
                 _,s,w = vf(1); return w,s
             if v0f*v1f > 0:
                 # Can't satisfy v=0; return the better one but penalized
@@ -248,10 +249,10 @@ class AxisTrajectory:
                     _,s,w = vf(1); return w+1e8*abs(v1f), s
 
             flo,fhi,vlo = 0.0,1.0,v0f
-            for _ in range(50):
+            for _ in range(15):  # Reduced from 50
                 fm = 0.5*(flo+fhi)
                 vm,segs,wm = vf(fm)
-                if abs(vm)<1e-8 or (fhi-flo)<1e-10:
+                if abs(vm)<1e-6 or (fhi-flo)<1e-6:
                     return wm, segs
                 if vm*vlo>0: flo,vlo = fm,vm
                 else: fhi = fm
@@ -270,6 +271,12 @@ class HehnTrajectoryGenerator:
         acc0 = np.asarray(acc0,float)
         target = np.zeros(3) if target is None else np.asarray(target,float)
         p0 = pos0-target
+
+        # Skip optimization for small displacements (near target)
+        dist = np.linalg.norm(p0)
+        if dist < 0.1:
+            optimize = False
+
         if dp is None: dp = DecouplingParams()
         if optimize: dp = self._opt(p0,vel0,acc0,dp)
         xa,ya,zlo,zhi,jm = compute_axis_constraints(self.qp,dp)
@@ -283,33 +290,37 @@ class HehnTrajectoryGenerator:
         return HehnTrajectory(axes,target,max(ax.tf for ax in axes),self.qp,dp)
 
     def _opt(self, p0, v0, a0, dp0):
+        """Optimized decoupling parameter search for real-time performance."""
         best_dp, best_tf = DecouplingParams(**dp0.__dict__), np.inf
         zb = self.qp.a_min - self.qp.g
 
-        # Determine which axes are active (nonzero initial state)
-        active = [abs(p0[i])>1e-6 or abs(v0[i])>1e-6 or abs(a0[i])>1e-6 for i in range(3)]
+        # Determine which axes are active
+        active = [abs(p0[i])>1e-4 or abs(v0[i])>1e-4 or abs(a0[i])>1e-4 for i in range(3)]
 
-        for zm in np.linspace(zb, max(zb+0.1,-0.1), 10):
+        # Reduced search: only 3 zm values
+        for zm in [zb, (zb-0.1)/2, max(zb+0.1,-0.1)]:
             dp = DecouplingParams(0.5,0.5,zm,dp0.a0)
-            azl,azh = 0.05,0.95
-            for _ in range(15):
+            azl,azh = 0.1,0.9
+
+            # Reduced iterations: 5 instead of 15
+            for _ in range(5):
                 dp.alpha_z = 0.5*(azl+azh)
-                axl,axh = 0.05,0.95
-                # Inner: sync x and y
+                axl,axh = 0.1,0.9
+
+                # Inner: sync x and y (reduced to 5 iterations)
                 if active[0] and active[1]:
-                    for _ in range(15):
+                    for _ in range(5):
                         dp.alpha_x = 0.5*(axl+axh)
                         tx,ty = self._qt(p0,v0,a0,dp,[0,1])
                         if tx>ty: axh=dp.alpha_x
                         else: axl=dp.alpha_x
-                        if (axh-axl)<0.01: break
+                        if (axh-axl)<0.05: break
                 elif active[0] and not active[1]:
-                    axl,axh = 0.9,0.95  # give most to x
+                    dp.alpha_x = 0.9
                 elif active[1] and not active[0]:
-                    axl,axh = 0.05,0.1  # give most to y
+                    dp.alpha_x = 0.1
                 else:
-                    axl,axh = 0.45,0.55  # doesn't matter
-                dp.alpha_x = 0.5*(axl+axh)
+                    dp.alpha_x = 0.5
 
                 # Outer: sync horizontal vs z
                 h_axes = [i for i in [0,1] if active[i]]
@@ -319,12 +330,13 @@ class HehnTrajectoryGenerator:
                     if tz>txy: azh=dp.alpha_z
                     else: azl=dp.alpha_z
                 elif active[2] and not h_axes:
-                    azl,azh = 0.85,0.95
+                    dp.alpha_z = 0.9
+                    break
                 elif h_axes and not active[2]:
-                    azl,azh = 0.05,0.15
-                else:
-                    azl,azh = 0.45,0.55
-                if (azh-azl)<0.01: break
+                    dp.alpha_z = 0.1
+                    break
+                if (azh-azl)<0.05: break
+
             dp.alpha_z = 0.5*(azl+azh)
             tf = max(self._qt(p0,v0,a0,dp,[0,1,2]))
             if tf<best_tf:
