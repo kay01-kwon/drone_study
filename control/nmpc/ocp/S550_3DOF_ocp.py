@@ -303,14 +303,11 @@ class S550_3DOF_ocp:
         return ref
 
     def _get_reference(self, t_rel):
-        """Get p_des, v_des for logging.
-        Use a small lookahead to show the trajectory's next desired state.
+        """Get p_des, v_des for logging at current time.
         Note: v_des = -dw/dt since dw/dt = -v_drone.
         """
-        dt_lookahead = self.T / self.N  # One horizon step ahead
-        t_sample = t_rel + dt_lookahead
-        err = self.traj.get_position(t_sample)
-        vel = self.traj.get_velocity(t_sample)
+        err = self.traj.get_position(t_rel)
+        vel = self.traj.get_velocity(t_rel)
         p_des = self.target_2d - np.array([err[0], err[2]])
         v_des = -np.array([vel[0], vel[2]])  # v_drone = -dw/dt
         return p_des, v_des
