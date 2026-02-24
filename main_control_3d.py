@@ -173,11 +173,11 @@ def estimate_acceleration(state, w_rotor, C_T, m):
 
 
 class TrajectoryManager:
-    """Manages Hehn trajectory generation with online replanning.
+    """Manages Hehn trajectory generation with every-step replanning.
 
-    Internally uses error representation: w0 = target - current_pos.
+    Uses error representation: w0 = target - current_pos.
     The Hehn trajectory drives w from w0 to 0 (error → 0).
-    Desired position: p_des = target - traj.get_position(t_rel)
+    Replans every control step with fresh w0, vel0, acc0.
     """
 
     def __init__(self, params, target_2d):
@@ -190,15 +190,11 @@ class TrajectoryManager:
         self.time_scale = tp.get('time_scale', 1.0)
         self.target = np.array([target_2d[0], 0.0, target_2d[1]])
         self.target_2d = np.array(target_2d)
-
         self.traj = None
-        self.t_start = 0.0
-        self.last_replan_time = -np.inf
-        self.replan_interval = 2.0
 
-    def generate(self, state_2d, acc_2d, t_now):
-        """Generate trajectory in error space: w0 = target - current_pos.
-        Since w = target - pos, dw/dt = -v, d²w/dt² = -a.
+    def generate(self, state_2d, acc_2d):
+        """Generate trajectory from error w0 = target - current_pos.
+        vel0, acc0 are current world-frame values (no sign flip).
         """
         pos = np.array([state_2d[0], 0.0, state_2d[1]])
         w0 = self.target - pos
@@ -212,20 +208,12 @@ class TrajectoryManager:
         else:
             self.traj = traj_raw
 
-        self.t_start = t_now
-        self.last_replan_time = t_now
-
-    def should_replan(self, t_now):
-        """Fixed-interval replanning."""
-        return (t_now - self.last_replan_time) >= self.replan_interval
-
-    def get_reference(self, t_now):
-        """Get desired [p_des, v_des] at current time.
-        p_des = target - error(t), v_des = -d(error)/dt
+    def get_reference(self, t_ahead=0.0):
+        """Get desired [p_des, v_des] at t_ahead from trajectory start.
+        p_des = target - error(t), v_des = trajectory velocity.
         """
-        t_rel = t_now - self.t_start
-        err = self.traj.get_position(t_rel)
-        err_dot = self.traj.get_velocity(t_rel)
+        err = self.traj.get_position(t_ahead)
+        err_dot = self.traj.get_velocity(t_ahead)
         p_des = self.target_2d - np.array([err[0], err[2]])
         v_des = np.array([err_dot[0], err_dot[2]])
         return p_des, v_des
@@ -250,7 +238,7 @@ def setup_trajectory_3d(mode, params, state0):
     # Initial trajectory with acc0 = 0 (drone at rest)
     state_2d = np.array([state0[0], state0[1], state0[2], state0[3]])
     acc_2d = np.array([0.0, 0.0])
-    traj_mgr.generate(state_2d, acc_2d, t_now=0.0)
+    traj_mgr.generate(state_2d, acc_2d)
 
     return traj_mgr
 
@@ -396,7 +384,7 @@ def main():
         p_target = params['regulation_params']['setpoint_position']
         print(f"\nRegulation: target position x={p_target[0]:.2f}, z={p_target[1]:.2f} m")
     else:
-        print(f"\nTracking: Hehn trajectory, duration={traj_mgr.duration:.2f}s (with replanning)")
+        print(f"\nTracking: Hehn trajectory, every-step replanning")
         print(f"  Target: {params['tracking_params']['target_position']}")
 
     print(f"Simulation time: {tf:.1f} s, dt: {dt*1000:.1f} ms\n")
@@ -432,17 +420,15 @@ def main():
             p_des = params['regulation_params']['setpoint_position']
             v_des = np.array([0.0, 0.0])
         else:
-            # Tracking: replanning at fixed interval
-            if traj_mgr.should_replan(t_now):
-                acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
-                from utils.math_tool import pitch_to_rotm
-                v_world = pitch_to_rotm(theta) @ v_body
-                state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
-                traj_mgr.generate(state_2d, acc_est, t_now)
-                if i % 100 == 0:
-                    print(f"[Replan] t={t_now:.2f}s, pos=[{p[0]:.3f}, {p[1]:.3f}]")
+            # Tracking: replan every step
+            acc_est = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
+            from utils.math_tool import pitch_to_rotm
+            v_world = pitch_to_rotm(theta) @ v_body
+            state_2d = np.array([p[0], p[1], v_world[0], v_world[1]])
+            traj_mgr.generate(state_2d, acc_est)
 
-            p_des, v_des = traj_mgr.get_reference(t_now)
+            # Reference for logging (one step ahead on trajectory)
+            p_des, v_des = traj_mgr.get_reference(dt)
 
         ref = np.concatenate([p_des, v_des])
 
@@ -469,7 +455,11 @@ def main():
 
         # Compute control
         if control_type == 'nmpc':
-            status, w_cmd = controller.solve(s_body, ref)
+            if control_mode == 'tracking' and traj_mgr is not None:
+                status, w_cmd = controller.solve_for_trajectory(
+                    s_body, 0.0, traj_mgr.traj, traj_mgr.target_2d)
+            else:
+                status, w_cmd = controller.solve(s_body, ref)
 
             if dob is not None:
                 # DOB compensation: subtract disturbance moment from NMPC output

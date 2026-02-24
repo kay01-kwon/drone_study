@@ -176,12 +176,13 @@ class S550_3DOF_ocp:
 
         return status, w_cmd
 
-    def solve_for_trajectory(self, state, t_curr, traj, u_prev=None):
+    def solve_for_trajectory(self, state, t_curr, traj, target_2d, u_prev=None):
         """
         Solve OCP for trajectory tracking along prediction horizon.
         :param state: [px, pz, vx_body, vz_body, th, q]
-        :param t_curr: Current time
-        :param traj: HehnTrajectory object with get_position/get_velocity/get_acceleration
+        :param t_curr: Current time relative to trajectory start
+        :param traj: HehnTrajectory (error-based: goes from w0 to 0)
+        :param target_2d: [x_target, z_target] world-frame target
         :param u_prev: previous thrust [u1, u2, u3]
         :return: (status, w_cmd)
         """
@@ -200,13 +201,13 @@ class S550_3DOF_ocp:
         # Set reference for each stage along prediction horizon
         for stage in range(self.N):
             t_ref = t_curr + stage * dt
-            ref_stage = self._traj_to_ref(traj, t_ref)
+            ref_stage = self._traj_to_ref(traj, t_ref, target_2d)
             y_ref = np.concatenate((ref_stage, u_prev))
             self.ocp_solver.set(stage, 'y_ref', y_ref)
 
         # Terminal reference
         t_ref_N = t_curr + self.T
-        ref_N = self._traj_to_ref(traj, t_ref_N)
+        ref_N = self._traj_to_ref(traj, t_ref_N, target_2d)
         self.ocp_solver.set(self.N, 'y_ref', ref_N)
 
         status = self.ocp_solver.solve()
@@ -221,19 +222,22 @@ class S550_3DOF_ocp:
 
         return status, w_cmd
 
-    def _traj_to_ref(self, traj, t):
-        """Convert hehn trajectory to NMPC reference [px, pz, vx, vz, th, q]."""
-        pos = traj.get_position(t)    # [x, y, z] (3D)
+    def _traj_to_ref(self, traj, t, target_2d):
+        """Convert error-based Hehn trajectory to NMPC reference.
+        Trajectory is in error space (w0 → 0), so:
+          p_des = target - traj.get_position(t)
+          v_des = traj.get_velocity(t)
+        """
+        err = traj.get_position(t)    # error [x, y, z] (3D), goes to 0
         vel = traj.get_velocity(t)    # [vx, vy, vz] (3D)
 
-        # 3DOF: extract x and z
         ref = np.zeros(6)
-        ref[0] = pos[0]   # px
-        ref[1] = pos[2]   # pz (use z from 3D)
-        ref[2] = vel[0]   # vx
-        ref[3] = vel[2]   # vz
-        ref[4] = 0.0      # th_des = 0 (let NMPC compute optimal pitch)
-        ref[5] = 0.0      # q_des = 0
+        ref[0] = target_2d[0] - err[0]   # px_des = target_x - error_x
+        ref[1] = target_2d[1] - err[2]   # pz_des = target_z - error_z
+        ref[2] = vel[0]                   # vx_des
+        ref[3] = vel[2]                   # vz_des
+        ref[4] = 0.0                      # th_des
+        ref[5] = 0.0                      # q_des
         return ref
 
     def _state_transform(self, state):
