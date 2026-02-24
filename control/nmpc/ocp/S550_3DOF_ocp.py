@@ -270,11 +270,22 @@ class S550_3DOF_ocp:
         return status, w_cmd, p_des, v_des
 
     def _generate_trajectory(self, state_2d, acc_2d, t_now):
-        """Generate Hehn trajectory from error w0 = target - current_pos."""
+        """Generate Hehn trajectory from error w0 = target - current_pos.
+
+        The Hehn trajectory plans for error w, where:
+        - w = target - pos
+        - dw/dt = -v_drone (error decreases as drone moves toward target)
+        - d²w/dt² = -a_drone
+
+        So we pass negated velocity and acceleration as initial conditions.
+        """
         pos = np.array([state_2d[0], 0.0, state_2d[1]])
         w0 = self.target_3d - pos
-        vel0 = np.array([state_2d[2], 0.0, state_2d[3]])
-        acc0 = np.array([acc_2d[0], 0.0, acc_2d[1]])
+
+        # Error rate: dw/dt = -v_drone
+        vel0 = -np.array([state_2d[2], 0.0, state_2d[3]])
+        # Error acceleration: d²w/dt² = -a_drone
+        acc0 = -np.array([acc_2d[0], 0.0, acc_2d[1]])
 
         traj_raw = self.traj_gen.generate(w0, vel0, acc0)
 
