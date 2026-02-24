@@ -245,10 +245,20 @@ class S550_3DOF_ocp:
         use_regulation = (dist_to_target < 0.03 and vel_mag < 0.05)
 
         if not use_regulation:
-            # Replan at 100Hz
+            # Check if we need to regenerate trajectory
             need_replan = self.traj is None
             if not need_replan and (t_now - self.t_start) >= self.replan_interval:
-                need_replan = True
+                # Check tracking error - only regenerate if tracking is poor
+                t_rel_check = t_now - self.t_start
+                if t_rel_check < self.traj.duration:
+                    p_ref, _ = self._get_reference(t_rel_check)
+                    pos_err = np.linalg.norm(state_2d[0:2] - p_ref)
+                    if pos_err > 0.02:  # Poor tracking: regenerate from actual state
+                        need_replan = True
+                    # else: good tracking, keep using existing trajectory
+                else:
+                    # Trajectory ended but not at target yet
+                    need_replan = True
 
             if need_replan:
                 self._generate_trajectory(state_2d, t_now)
