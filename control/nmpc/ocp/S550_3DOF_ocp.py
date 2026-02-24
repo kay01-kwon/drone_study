@@ -261,7 +261,7 @@ class S550_3DOF_ocp:
                     need_replan = True
 
             if need_replan:
-                self._generate_trajectory_with_timeout(state_2d, t_now)
+                self._generate_trajectory(state_2d, t_now)
 
         t_rel = t_now - self.t_start
         dt = self.T / self.N
@@ -324,27 +324,6 @@ class S550_3DOF_ocp:
         w_cmd = np.sqrt(u / self.C_T)
 
         return status, w_cmd, p_des, v_des
-
-    def _generate_trajectory_with_timeout(self, state_2d, t_now, timeout_ms=5.0):
-        """Generate trajectory with timeout. If generation takes > timeout_ms,
-        keep the previous trajectory instead.
-        """
-        import time
-
-        # Save previous trajectory in case we need to revert
-        prev_traj = self.traj
-        prev_t_start = self.t_start
-
-        t_gen_start = time.perf_counter()
-        self._generate_trajectory(state_2d, t_now)
-        t_gen_end = time.perf_counter()
-
-        gen_time_ms = (t_gen_end - t_gen_start) * 1000
-
-        # If generation took too long and we had a valid previous trajectory, revert
-        if gen_time_ms > timeout_ms and prev_traj is not None:
-            self.traj = prev_traj
-            self.t_start = prev_t_start
 
     def _generate_trajectory(self, state_2d, t_now):
         """Generate Hehn trajectory from current position to target.
