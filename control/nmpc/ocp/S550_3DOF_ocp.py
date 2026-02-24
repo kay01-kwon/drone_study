@@ -227,8 +227,28 @@ class S550_3DOF_ocp:
         if u_prev is None:
             u_prev = np.array([self.u_hover]*self.nu)
 
-        # Replan if interval elapsed
-        if (t_now - self.t_start) >= self.replan_interval or self.traj is None:
+        # Smart replan: only replan if needed
+        need_replan = self.traj is None
+        if not need_replan and (t_now - self.t_start) >= self.replan_interval:
+            t_rel = t_now - self.t_start
+            # Check if trajectory has ended
+            traj_ended = t_rel >= self.traj.duration
+            # Check distance to target
+            dist_to_target = np.linalg.norm(state_2d[0:2] - self.target_2d)
+
+            if traj_ended and dist_to_target < 0.02:
+                # Trajectory ended and close to target: no replan needed
+                need_replan = False
+            else:
+                # Check tracking error
+                p_des_traj, v_des_traj = self._get_reference(t_rel)
+                pos_err = np.linalg.norm(state_2d[0:2] - p_des_traj)
+                vel_err = np.linalg.norm(state_2d[2:4] - v_des_traj)
+                # Only replan if tracking error is significant
+                if pos_err > 0.03 or vel_err > 0.08:
+                    need_replan = True
+
+        if need_replan:
             self._generate_trajectory(state_2d, t_now)
 
         t_rel = t_now - self.t_start
