@@ -256,13 +256,10 @@ class S550_3D_Sim_Model:
         else:
             # Static friction assumption
             f_fric = -fx
-            cth = np.cos(theta)
-            sth = np.sin(theta)
-            M_contact = ((-self.N_f*cth + f_fric*sth)*(self.x_g/2.0 - self.x_off)
-                         +(self.N_f*sth + f_fric*cth)*(self.h_g + self.z_off))
+            M_contact = self.m * self.g * self.r_f * np.sin(theta - self.delta_f)
 
             dthdt = q
-            dqdt = 1.0/self.Jyy_f * (My + self.x_off*f + M_contact)
+            dqdt = 1.0/self.Jyy_f * (My + self.x_g*f + M_contact)
 
             dpdt = self.r_f * q * np.array([np.cos(theta - self.delta_f),
                                             -np.sin(theta - self.delta_f)])
@@ -296,11 +293,10 @@ class S550_3D_Sim_Model:
             f_fric = -fx
             cth = np.cos(theta)
             sth = np.sin(theta)
-            M_contact = ((-self.N_b * cth + f_fric * sth) * (self.x_g / 2.0 + self.x_off)
-                         + (self.N_b * sth - f_fric * cth) * (self.h_g + self.z_off))
+            M_contact = self.m * self.g * self.r_b * np.sin(theta + self.delta_b)
 
             dthdt = q
-            dqdt = 1.0 / self.Jyy_b * (My + self.x_off*f + M_contact)
+            dqdt = 1.0 / self.Jyy_b * (My - self.x_g*f + M_contact)
 
             dpdt = self.r_b * q * np.array([-np.cos(theta + self.delta_b),
                                             np.sin(theta + self.delta_b)])

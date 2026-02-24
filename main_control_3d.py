@@ -206,7 +206,7 @@ def main():
     # Phase 1 (0 ~ 10s): Takeoff and hover at z=0.5m
     # Phase 2 (10 ~ 15s): Descend to z=0.0m (landing)
     # Phase 3 (15 ~ 20s): Stay on ground
-    z_hover = 0.5
+    z_hover = 1.0
     t_descend_start = 10.0
     t_descend_end = 15.0
 

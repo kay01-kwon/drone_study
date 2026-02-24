@@ -42,3 +42,11 @@ def otimes(q1, q2):
     )
 
     return cs.mtimes(q1_L, q2)
+
+def pitch_to_rotm(th):
+
+    R = cs.vertcat(
+        cs.horzcat(cs.cos(th), cs.sin(th)),
+        cs.horzcat(-cs.sin(th), cs.cos(th)),
+    )
+    return R
