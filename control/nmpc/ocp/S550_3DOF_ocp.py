@@ -282,6 +282,14 @@ class S550_3DOF_ocp:
 
         traj_raw = self.traj_gen.generate(pos0, vel0, acc0, target=self.target_3d)
 
+        # Debug: print trajectory info at replan
+        if t_now < 0.5:  # Only print for first few replans
+            p0 = pos0 - self.target_3d
+            print(f"[Traj] t={t_now:.2f} pos0={pos0} target={self.target_3d}")
+            print(f"       p0(internal)={p0} vel0={vel0}")
+            print(f"       get_pos(0)={traj_raw.get_position(0)} get_vel(0)={traj_raw.get_velocity(0)}")
+            print(f"       get_pos(0.5)={traj_raw.get_position(0.5)} get_vel(0.5)={traj_raw.get_velocity(0.5)}")
+
         if self.time_scale != 1.0:
             self.traj = ScaledTrajectory(traj_raw, self.time_scale)
         else:
