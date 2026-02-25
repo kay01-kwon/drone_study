@@ -440,9 +440,11 @@ def main():
             t_solve_end = time.perf_counter()
             nmpc_solve_times.append(t_solve_end - t_solve_start)
 
-            if dob is not None and t_now > 1.0:
+            # DOB compensation: activate after liftoff (vz > 0.01 m/s)
+            # Previously used t > 1.0s which caused 0.2s of uncompensated disturbance
+            vz = v_world[1]
+            if dob is not None and vz > 0.01:
                 # DOB compensation: subtract disturbance from NMPC output
-                # Wait until t > 1.0s for DOB to converge after liftoff
                 u_mpc = hexa_converter.compute_u(w_cmd)
                 u_comp = u_mpc.copy()
                 u_comp[0] -= d_est[1]              # subtract f_ext_z from Fz
