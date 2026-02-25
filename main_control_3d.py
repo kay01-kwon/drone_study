@@ -73,16 +73,20 @@ def load_parameters_3d(control_type, dob_type):
         params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
         params['gain_params'] = yaml_loader.get_pd_gain_params(config_control)
 
-        # Default regulation for PD
+        # Regulation params
+        regulation = config_control.get('regulation', {})
         params['regulation_params'] = {
-            'setpoint_position': np.array([0.0, 1.0])
+            'setpoint_position': np.array(regulation.get('setpoint_position', [0.0, 1.0]))
         }
+
+        # Tracking params
+        tracking = config_control.get('tracking', {})
         params['tracking_params'] = {
-            'target_position': np.array([2.0, 1.0]),
-            'a_max': 12.0,
-            'a_min': 3.0,
-            'omega_xy_max': 3.0,
-            'time_scale': 5.0,
+            'target_position': np.array(tracking.get('target_position', [0.0, 1.0])),
+            'a_max': tracking.get('a_max', 12.0),
+            'a_min': tracking.get('a_min', 3.0),
+            'omega_xy_max': tracking.get('omega_xy_max', 3.0),
+            'time_scale': tracking.get('time_scale', 5.0),
         }
 
     # Load DOB parameters

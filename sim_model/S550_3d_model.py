@@ -254,8 +254,6 @@ class S550_3D_Sim_Model:
             self.is_contact = False
         # Front contact condition
         else:
-            # Static friction assumption
-            f_fric = -fx
             cth = np.cos(theta)
             sth = np.sin(theta)
             M_contact = self.m * self.g *( (self.h_g + self.z_off) * sth
