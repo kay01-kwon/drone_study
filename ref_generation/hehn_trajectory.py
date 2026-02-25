@@ -261,7 +261,17 @@ class HehnTrajectoryGenerator:
     def __init__(self, qp=None):
         self.qp = qp or QuadParams()
 
-    def generate(self, pos0, vel0, acc0, target=None, dp=None, optimize=True):
+    def generate(self, pos0, vel0, acc0, target=None, dp=None, optimize=True, j_max=None):
+        """
+        Generate minimum-time trajectory.
+
+        Args:
+            pos0, vel0, acc0: Initial state
+            target: Target position
+            dp: Decoupling parameters
+            optimize: Whether to optimize decoupling parameters
+            j_max: Optional jerk limit override. If None, computed from constraints.
+        """
         pos0 = np.asarray(pos0,float)
         vel0 = np.asarray(vel0,float)
         acc0 = np.asarray(acc0,float)
@@ -283,6 +293,10 @@ class HehnTrajectoryGenerator:
         if dp is None: dp = DecouplingParams()
         if optimize: dp = self._opt(p0,vel0,acc0,dp)
         xa,ya,zlo,zhi,jm = compute_axis_constraints(self.qp,dp)
+
+        # Override jerk limit if provided
+        if j_max is not None:
+            jm = j_max
         if jm<1e-6: jm=1.0
         axes = [
             AxisTrajectory(p0[0],vel0[0],acc0[0],-xa,xa,jm),
