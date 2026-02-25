@@ -36,26 +36,26 @@ class S550_3D_Sim_Model:
         self.z_off = DynamicParam['com_offset'][2]
 
         # Landing gear info
-        self.x_g = 0.256
-        self.y_g = 0.288
+        self.x_g = 0.256/2.0
+        self.y_g = 0.288/2.0
         self.h_g = 0.258
 
         # Arm length, MOI, and initial angle for contact
         # Front landing gear contact
-        self.r_f = np.sqrt((self.x_g/2.0 - self.x_off)**2
+        self.r_f = np.sqrt((self.x_g - self.x_off)**2
                            + (self.h_g + self.z_off)**2)
 
         self.Jyy_f = self.Jyy + self.m * self.r_f**2
 
-        self.delta_f = np.arctan2(self.x_g/2.0 - self.x_off,
+        self.delta_f = np.arctan2(self.x_g - self.x_off,
                                   self.h_g + self.z_off)
 
-        self.r_b = np.sqrt((self.x_g/2.0 + self.x_off)**2
+        self.r_b = np.sqrt((self.x_g + self.x_off)**2
                            + (self.h_g + self.z_off)**2)
 
         self.Jyy_b = self.Jyy + self.m * self.r_b**2
 
-        self.delta_b = np.arctan2(self.x_g/2.0 + self.x_off,
+        self.delta_b = np.arctan2(self.x_g + self.x_off,
                                   self.h_g + self.z_off)
         # Gravity (2D: x, z)
         self.g = 9.81
@@ -187,12 +187,12 @@ class S550_3D_Sim_Model:
         f, My = self._unpack_control_input(u)
 
         # Front normal force
-        self.N_f = (self.m * self.g * (0.5 + self.x_off/self.x_g)
-                    - 0.5 * f + My/self.x_g)
+        self.N_f = 0.5*(self.m * self.g * (1.0 + self.x_off/self.x_g)
+                    - f + My/self.x_g)
 
         # Rear normal force
-        self.N_b = (self.m * self.g * (0.5 - self.x_off/self.x_g)
-                    - 0.5 * f - My/self.x_g)
+        self.N_b = 0.5*(self.m * self.g * (1.0 - self.x_off/self.x_g)
+                    - f - My/self.x_g)
 
     def _compute_gear_heights(self, state):
         """Compute world-frame z-coordinates of front and rear landing gear.
@@ -208,12 +208,12 @@ class S550_3D_Sim_Model:
 
         # Front gear z in world frame
         z_front = (p[1]
-                   - sth * (self.x_g / 2.0 - self.x_off)
+                   - sth * (self.x_g - self.x_off)
                    - cth * (self.h_g + self.z_off))
 
         # Rear gear z in world frame
         z_rear = (p[1]
-                  + sth * (self.x_g / 2.0 + self.x_off)
+                  + sth * (self.x_g + self.x_off)
                   - cth * (self.h_g + self.z_off))
 
         return z_front, z_rear
@@ -256,7 +256,10 @@ class S550_3D_Sim_Model:
         else:
             # Static friction assumption
             f_fric = -fx
-            M_contact = self.m * self.g * self.r_f * np.sin(theta - self.delta_f)
+            cth = np.cos(theta)
+            sth = np.sin(theta)
+            M_contact = self.m * self.g *( (self.h_g + self.z_off) * sth
+                                           -(self.x_g - self.x_off) * cth )
 
             dthdt = q
             dqdt = 1.0/self.Jyy_f * (My + self.x_g*f + M_contact)
@@ -293,7 +296,8 @@ class S550_3D_Sim_Model:
             f_fric = -fx
             cth = np.cos(theta)
             sth = np.sin(theta)
-            M_contact = self.m * self.g * self.r_b * np.sin(theta + self.delta_b)
+            M_contact = self.m * self.g * ((self.h_g + self.z_off) * sth
+                                           + (self.x_g + self.x_off) * cth)
 
             dthdt = q
             dqdt = 1.0 / self.Jyy_b * (My - self.x_g*f + M_contact)
