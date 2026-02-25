@@ -223,6 +223,21 @@ def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data, nmpc_solve_ti
     plt.savefig('results_3d.png', dpi=300)
     plt.show()
 
+    # Disturbance moment comparison: estimated vs actual (separate figure)
+    if 'tau_actual' in dob_data:
+        fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
+        ax_dist.plot(t, dob_data['tau_actual'], 'b-', linewidth=1.5, label=r'$\tau_{actual}$ (actual disturbance)')
+        ax_dist.plot(t, dob_data['tau_est'], 'r--', linewidth=1.5, label=r'$\tau_{est}$ (DOB estimate)')
+        ax_dist.set_xlabel('Time [s]')
+        ax_dist.set_ylabel('Moment [Nm]')
+        ax_dist.set_title('Pitch Disturbance Moment: Actual vs DOB Estimate')
+        ax_dist.legend()
+        ax_dist.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig('disturbance_moment_comparison.png', dpi=300)
+        plt.show()
+
     # NMPC solve time histogram
     if nmpc_solve_times is not None and len(nmpc_solve_times) > 0:
         solve_times_ms = np.array(nmpc_solve_times) * 1000
@@ -357,7 +372,11 @@ def main():
     alpha_rotor_hist = []
     f_est_hist = []
     tau_est_hist = []
+    tau_actual_hist = []
     nmpc_solve_times = []
+
+    # Nominal Jyy for actual disturbance computation
+    Jyy_nominal = params['nominal_dynamic_params']['MoiArray'][1]
 
     # Main simulation loop
     for i in range(N - 1):
@@ -451,6 +470,16 @@ def main():
         # Compute actual control input from rotor speeds
         u_actual = hexa_converter.compute_u(s_rotor[:num_rotors])
 
+        # Compute actual disturbance moment (from DOB's perspective)
+        # DOB model: Jyy_nom * dqdt = My + tau_ext
+        # Actual: dqdt comes from simulator (flight/contact dynamics)
+        # tau_actual = Jyy_nom * dqdt_actual - My_actual
+        sdot_actual = drone_sim_model.dynamics(t_now, s_drone, u_actual)
+        dqdt_actual = sdot_actual[5]
+        My_actual = u_actual[1]
+        tau_actual = Jyy_nominal * dqdt_actual - My_actual
+        tau_actual_hist.append(tau_actual)
+
         # Simulate drone dynamics
         s_drone = custom_rk4.do_step(drone_sim_model.dynamics,
                                      s_drone, u_actual, t_ode)
@@ -483,7 +512,8 @@ def main():
 
     dob_data = {
         'f_est': np.array(f_est_hist),
-        'tau_est': np.array(tau_est_hist)
+        'tau_est': np.array(tau_est_hist),
+        'tau_actual': np.array(tau_actual_hist)
     }
 
     # Print final statistics
