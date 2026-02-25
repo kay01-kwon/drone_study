@@ -225,14 +225,24 @@ def plot_results_3d(t, drone_data, rotor_data, ref_data, dob_data, nmpc_solve_ti
 
     # Disturbance moment comparison: estimated vs actual (separate figure)
     if 'tau_actual' in dob_data:
-        fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
-        ax_dist.plot(t, dob_data['tau_actual'], 'b-', linewidth=1.5, label=r'$\tau_{actual}$ (actual disturbance)')
-        ax_dist.plot(t, dob_data['tau_est'], 'r--', linewidth=1.5, label=r'$\tau_{est}$ (DOB estimate)')
-        ax_dist.set_xlabel('Time [s]')
-        ax_dist.set_ylabel('Moment [Nm]')
-        ax_dist.set_title('Pitch Disturbance Moment: Actual vs DOB Estimate')
-        ax_dist.legend()
-        ax_dist.grid(True, alpha=0.3)
+        fig_dist, axes_dist = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+
+        # Top: disturbance moment comparison
+        axes_dist[0].plot(t, dob_data['tau_actual'], 'b-', linewidth=1.5, label=r'$\tau_{actual}$ (actual disturbance)')
+        axes_dist[0].plot(t, dob_data['tau_est'], 'r--', linewidth=1.5, label=r'$\tau_{est}$ (DOB estimate)')
+        axes_dist[0].set_ylabel('Moment [Nm]')
+        axes_dist[0].set_title('Pitch Disturbance Moment: Actual vs DOB Estimate')
+        axes_dist[0].legend()
+        axes_dist[0].grid(True, alpha=0.3)
+
+        # Bottom: compensated control moment (u_comp My)
+        if 'My_comp' in dob_data:
+            axes_dist[1].plot(t, dob_data['My_comp'], 'g-', linewidth=1.5, label=r'$M_{y,comp}$ (commanded)')
+            axes_dist[1].set_ylabel('Moment [Nm]')
+            axes_dist[1].set_xlabel('Time [s]')
+            axes_dist[1].set_title('Compensated Control Moment ($u_{comp}$ My)')
+            axes_dist[1].legend()
+            axes_dist[1].grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.savefig('disturbance_moment_comparison.png', dpi=300)
@@ -373,6 +383,7 @@ def main():
     f_est_hist = []
     tau_est_hist = []
     tau_actual_hist = []
+    My_comp_hist = []
     nmpc_solve_times = []
 
     # Nominal Jyy for actual disturbance computation
@@ -412,6 +423,7 @@ def main():
         tau_est = d_est[2]
 
         # Compute control
+        My_comp = 0.0
         if control_type == 'nmpc':
             t_solve_start = time.perf_counter()
             if control_mode == 'tracking':
@@ -431,7 +443,10 @@ def main():
                 u_comp = u_mpc.copy()
                 u_comp[0] -= d_est[1]              # subtract f_ext_z from Fz
                 u_comp[1] -= d_est[2]              # subtract tau_ext from My
+                My_comp = u_comp[1]
                 w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
+            else:
+                My_comp = hexa_converter.compute_u(w_cmd)[1]
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t={t_now:.2f}s")
@@ -443,6 +458,7 @@ def main():
                 v_des = np.array([0.0, 0.0])
                 ref = np.concatenate([p_des, v_des])
             u = controller.compute_u(s_body, ref, d_est, dt)
+            My_comp = u[1]
             w_cmd = hexa_converter.compute_des_rotor_speed(u)
 
         # Store history
@@ -456,6 +472,7 @@ def main():
         alpha_rotor_hist.append(alpha_rotor.copy())
         f_est_hist.append(f_est.copy())
         tau_est_hist.append(tau_est)
+        My_comp_hist.append(My_comp)
 
         # Simulation step
         t_ode = [t_sim[i], t_sim[i + 1]]
@@ -513,7 +530,8 @@ def main():
     dob_data = {
         'f_est': np.array(f_est_hist),
         'tau_est': np.array(tau_est_hist),
-        'tau_actual': np.array(tau_actual_hist)
+        'tau_actual': np.array(tau_actual_hist),
+        'My_comp': np.array(My_comp_hist)
     }
 
     # Print final statistics
