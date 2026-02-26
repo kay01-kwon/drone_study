@@ -390,8 +390,8 @@ def main():
     My_comp_hist = []
     nmpc_solve_times = []
 
-    # Nominal Jyy for actual disturbance computation
-    Jyy_nominal = params['nominal_dynamic_params']['MoiArray'][1]
+    # True Jyy for actual physical disturbance computation
+    Jyy_true = params['true_dynamic_params']['MoiArray'][1]
 
     # Main simulation loop
     for i in range(N - 1):
@@ -490,14 +490,13 @@ def main():
         # Compute actual control input from rotor speeds
         u_actual = hexa_converter.compute_u(s_rotor[:num_rotors])
 
-        # Compute actual disturbance moment (from DOB's perspective)
-        # DOB model: Jyy_nom * dqdt = My + tau_ext
-        # Actual: dqdt comes from simulator (flight/contact dynamics)
-        # tau_actual = Jyy_nom * dqdt_actual - My_actual
+        # Compute actual physical disturbance moment
+        # True dynamics: Jyy_true * dqdt = My + tau_ext
+        # tau_actual = Jyy_true * dqdt_actual - My_actual
         sdot_actual = drone_sim_model.dynamics(t_now, s_drone, u_actual)
         dqdt_actual = sdot_actual[5]
         My_actual = u_actual[1]
-        tau_actual = Jyy_nominal * dqdt_actual - My_actual
+        tau_actual = Jyy_true * dqdt_actual - My_actual
         tau_actual_hist.append(tau_actual)
 
         # Simulate drone dynamics
