@@ -22,6 +22,7 @@ from sim_model.rotor_model import RotorModel
 from utils.drone_converter import HexaConverter
 from utils.custom_ode import custom_rk4
 from utils.state_initializer import state_initialize
+from estimator.dob.hgdo.hgdo_3d import HGDO3D
 
 
 def main():
@@ -58,6 +59,10 @@ def main():
         'K_p': 0.2,
         'deadband': 0.15
     }
+    DobParam = {
+        'eps_tau': 0.005,  # Faster time constant for moment estimation
+        'eps_f': 0.005     # Faster time constant for force estimation
+    }
 
     # Create models
     print("\nInitializing models...")
@@ -71,6 +76,12 @@ def main():
 
     print("Creating adaptive jerk OCP...")
     controller = AdaptiveJerkOCP(DynParam, DroneParam, RotorParam, MpcParam)
+
+    print("Creating HGDO3D for disturbance estimation...")
+    hgdo = HGDO3D(DynParam, DroneParam, RotorParam, DobParam)
+
+    # HGDO will estimate additional unknown disturbances
+    # Known COM offset is handled with feedforward compensation
 
     # Simulation parameters
     dt = 0.01
@@ -90,35 +101,20 @@ def main():
     initial_cm_pos = np.array([0.0 + com_offset[0], 1.0 + h_g + com_offset[2]])
 
     # Compute asymmetric hover thrust to compensate for COM offset
-    # At hover: dqdt = (My + x_off * f) / Jyy = 0
-    # So My = -x_off * f = -(-0.0105) * (m * g) = 0.309 Nm
-    # With My = 2 * l * sqrt(3) * (-u1 + u3), solve for u1, u3
     x_off = com_offset[0]
     l = DroneParam['arm_length']
     My_hover = -x_off * m * 9.81  # Moment needed to counteract COM offset
-    # My = l * sqrt(3) * (-u1 + u3) = l * sqrt(3) * delta_u
     delta_u = My_hover / (l * np.sqrt(3))  # u3 - u1
 
-    # Total thrust constraint: u1 + u2 + u3 = m * g / 2
-    u_total = m * 9.81 / 2.0  # Total thrust from 3 rotor groups
-    u_avg = u_total / 3.0  # Average thrust per group
-
-    # Solve: u1 + u2 + u3 = u_total, u3 - u1 = delta_u, u2 = u_avg
-    # u1 + u3 = u_total - u_avg = 2*u_avg
-    # u3 - u1 = delta_u
-    # => u3 = u_avg + delta_u/2, u1 = u_avg - delta_u/2
+    u_avg = m * 9.81 / 6.0  # Average thrust per rotor
     u1_hover = u_avg - delta_u / 2.0
-    u2_hover = u_avg
     u3_hover = u_avg + delta_u / 2.0
 
     w1_hover = np.sqrt(u1_hover / C_T)
-    w2_hover = np.sqrt(u2_hover / C_T)
+    w2_hover = np.sqrt(u_avg / C_T)
     w3_hover = np.sqrt(u3_hover / C_T)
 
-    print(f"\nAsymmetric hover speeds for COM offset compensation:")
-    print(f"  My_hover = {My_hover:.4f} Nm")
-    print(f"  w_hover = [{w1_hover:.1f}, {w2_hover:.1f}, {w3_hover:.1f}] rad/s")
-
+    print(f"\nAsymmetric hover for COM offset compensation: w=[{w1_hover:.0f}, {w2_hover:.0f}, {w3_hover:.0f}]")
     s_drone, s_rotor = state_initialize(np.array([w1_hover, w2_hover, w3_hover]), initial_cm_pos, Dim=3)
 
     # Disable ground contact for cleaner hover test
@@ -147,10 +143,12 @@ def main():
     j_z_hist = []
     j_x_hist = []
     eta_hist = []
+    tau_ext_hist = []
 
     alpha_max = RotorParam['alpha_rotor_max']
     num_rotors = RotorParam['num_rotors']
     C_T = DroneParam['motor_const']
+    l = DroneParam['arm_length']
 
     print("\nRunning simulation...")
 
@@ -173,11 +171,32 @@ def main():
         # Compute actual thrust
         T_actual = 2.0 * C_T * np.sum(w_rotor**2)
 
+        # Estimate disturbance using HGDO
+        t_prev = t_sim[max(0, i-1)]
+        dist_est = hgdo.dob_estimate(t_prev, t, w_rotor, s_body)
+        f_ext = dist_est[0:2]   # Force disturbance in body frame [fx, fz]
+        tau_ext = dist_est[2]   # Moment disturbance (My)
+
         # Solve NMPC
         status, w_cmd, info = controller.solve(s_body, ref, T_actual)
 
         if status != 0 and i % 100 == 0:
             print(f"  Warning: solver status {status} at t={t:.2f}s")
+
+        # Apply disturbance compensation: feedforward (known COM offset)
+        # Use actual thrust for more accurate feedforward
+        x_off = DynParam['com_offset'][0]
+        tau_ff = -x_off * T_actual  # Moment to compensate for COM offset
+
+        # My_comp = tau_ff = l * sqrt(3) * (-du1 + du3)
+        du_comp = tau_ff / (2.0 * l * np.sqrt(3))
+        u_cmd = C_T * w_cmd**2
+        u_cmd[0] -= du_comp  # Reduce front thrust
+        u_cmd[2] += du_comp  # Increase rear thrust
+
+        # Clamp and convert back to rotor speed
+        u_cmd = np.clip(u_cmd, C_T * RotorParam['w_rotor_min']**2, C_T * RotorParam['w_rotor_max']**2)
+        w_cmd = np.sqrt(u_cmd / C_T)
 
         # Store data
         pos_hist.append(p.copy())
@@ -190,6 +209,7 @@ def main():
         j_z_hist.append(info['j_z_limit'])
         j_x_hist.append(info['j_x_limit'])
         eta_hist.append(info['stats']['eta_mean'])
+        tau_ext_hist.append(tau_ext)
 
         # Simulate dynamics
         t_ode = [t, t + dt]
@@ -225,6 +245,7 @@ def main():
     j_z_hist = np.array(j_z_hist)
     j_x_hist = np.array(j_x_hist)
     eta_hist = np.array(eta_hist)
+    tau_ext_hist = np.array(tau_ext_hist)
 
     # Plot results
     print("\nGenerating plots...")
@@ -270,12 +291,14 @@ def main():
     axes[2, 0].legend()
     axes[2, 0].grid(True)
 
-    # Tracking ratio (eta)
-    axes[2, 1].plot(t_sim[:-1], eta_hist, 'g-')
-    axes[2, 1].axhline(y=1.0, color='r', linestyle='--', alpha=0.5, label='Perfect')
+    # Estimated disturbance moment
+    x_off = DynParam['com_offset'][0]
+    tau_expected = -x_off * m * 9.81  # Expected disturbance from COM offset
+    axes[2, 1].plot(t_sim[:-1], tau_ext_hist, 'b-', label='tau_ext (est)')
+    axes[2, 1].axhline(y=tau_expected, color='r', linestyle='--', alpha=0.5, label=f'Expected ({tau_expected:.3f})')
     axes[2, 1].set_xlabel('Time [s]')
-    axes[2, 1].set_ylabel('eta')
-    axes[2, 1].set_title('Actuator Tracking (eta)')
+    axes[2, 1].set_ylabel('Moment [Nm]')
+    axes[2, 1].set_title('HGDO Estimated Disturbance Moment')
     axes[2, 1].legend()
     axes[2, 1].grid(True)
 

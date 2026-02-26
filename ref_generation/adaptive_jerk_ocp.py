@@ -194,10 +194,6 @@ class AdaptiveJerkOCP:
         self.C_T = DroneParam['motor_const']
         self.k_m = DroneParam['moment_const']
 
-        # COM offset (important for dynamics matching)
-        com_offset = DynParam.get('com_offset', [0.0, 0.0, 0.0])
-        self.x_off = com_offset[0]  # x offset of COM from body center
-
         # Initialize jerk limiter
         limiter_params = {
             'm': self.m,
@@ -359,14 +355,13 @@ class AdaptiveJerkOCP:
         cth = cs.cos(th)
         sth = cs.sin(th)
 
-        # Dynamics
+        # Dynamics (ideal model without COM offset - disturbance handled by HGDO)
         dpxdt = vx
         dpzdt = vz
         dvxdt = -f_col / self.m * sth
         dvzdt = f_col / self.m * cth - 9.81
         dthdt = q
-        # Include COM offset effect: dqdt = (My + x_off * f) / Jyy
-        dqdt = (My + self.x_off * f_col) / self.Jyy
+        dqdt = My / self.Jyy
 
         return cs.vertcat(dpxdt, dpzdt, dvxdt, dvzdt, dthdt, dqdt)
 
