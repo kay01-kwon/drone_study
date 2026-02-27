@@ -41,26 +41,44 @@ f_ratio = 1.0 / np.cos(theta_rad)
 # ==========================
 fig, ax = plt.subplots(figsize=(10, 6))
 
-ax.plot(theta_deg, f_ratio, 'b-', linewidth=2.5, label=r'$f/mg = 1/\cos(\theta)$')
+# Define y-axis limits
+y_min, y_max = 0.98, 1.10
+
+# Fill STABLE region (above the curve)
+ax.fill_between(theta_deg, f_ratio, y_max,
+                color='lightgreen', alpha=0.5, label='Stable')
+
+# Fill UNSTABLE region (below the curve)
+ax.fill_between(theta_deg, y_min, f_ratio,
+                color='lightcoral', alpha=0.5, label='Unstable')
+
+# Plot the equilibrium curve
+ax.plot(theta_deg, f_ratio, 'b-', linewidth=2.5, label=r'Equilibrium: $f/mg = 1/\cos(\theta)$')
 
 # Mark specific points
 theta_marks = [0, 5, 10, 15, 20]
 for theta in theta_marks:
     f_val = 1.0 / np.cos(np.deg2rad(theta))
-    ax.plot(theta, f_val, 'ro', markersize=8)
+    ax.plot(theta, f_val, 'ko', markersize=6)
     ax.annotate(f'{f_val:.4f}', (theta, f_val),
                 textcoords='offset points', xytext=(5, 10), fontsize=10)
 
+# Add Stable/Unstable text labels
+ax.text(10, 1.075, 'STABLE', fontsize=16, fontweight='bold',
+        color='darkgreen', ha='center', va='center')
+ax.text(10, 1.005, 'UNSTABLE', fontsize=16, fontweight='bold',
+        color='darkred', ha='center', va='center')
+
 ax.set_xlabel(r'$\theta$ [deg]', fontsize=14)
 ax.set_ylabel(r'$f / mg$', fontsize=14)
-ax.set_title(r'Required Thrust Ratio vs Pitch Angle ($x_g$ = %.4f m)' % x_g, fontsize=14)
-ax.legend(loc='upper left', fontsize=12)
-ax.grid(True, alpha=0.3)
+ax.set_title(r'Moment Stability: Thrust Ratio vs Pitch Angle ($x_g$ = %.4f m)' % x_g, fontsize=14)
+ax.legend(loc='upper left', fontsize=11)
+ax.grid(True, alpha=0.3, zorder=5)
 ax.set_xlim([0, 20])
-ax.set_ylim([0.98, 1.10])
+ax.set_ylim([y_min, y_max])
 
 # Add horizontal line at f/mg = 1
-ax.axhline(y=1.0, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='f = mg')
+ax.axhline(y=1.0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
 
 plt.tight_layout()
 plt.savefig('analysis/thrust_vs_theta.png', dpi=150, bbox_inches='tight')
