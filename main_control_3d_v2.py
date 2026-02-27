@@ -6,12 +6,13 @@ Key differences from main_control_3d.py:
 1. Uses S550_3DOF_ocp_v2 with angular velocity and roll/pitch feedback
 2. Position/velocity trajectory uses Hehn trajectory with z-jerk based on rotor dynamics:
    - j_max_z = 3 * C_T * w_hover * alpha (alpha = 10,000 RPM/s)
-3. Angular trajectory:
-   - At landing: feedback angular velocity trajectory
-   - Otherwise: feedback 0
+3. Angular trajectory with altitude-based feedback:
+   - z <= 0.01m (grounded): feedback angular velocity and pitch trajectory
+   - z > 0.01m (airborne): feedback pitch=0, angular velocity=0
 4. DOB moment differentiation with LPF for dynamic angular jerk limit:
    - M_dot_y from DOB moment differentiation
-   - j_max_ang = M_dot_y / J_p (where h_eff = 360mm)
+   - j_max_ang = M_dot_y / J_p
+   - J_p = m * (xg^2 + h_eff^2), where h_eff = 0.360m
 
 Examples:
     python3 main_control_3d_v2.py --control nmpc --dob hgdo --mode tracking
@@ -129,23 +130,18 @@ def setup_controller_3d_v2(control_type, dob_type, params):
     return controller, dob
 
 
-def detect_landing(p, v, z_threshold=0.1, v_threshold=0.5):
+def detect_grounded(p, z_threshold=0.01):
     """
-    Detect if the drone is in landing phase.
+    Detect if the drone is grounded (altitude <= 0.01m).
 
     Args:
         p: Current position [x, z]
-        v: Current velocity [vx, vz]
-        z_threshold: Height threshold for landing detection [m]
-        v_threshold: Velocity threshold for landing detection [m/s]
+        z_threshold: Height threshold for grounded detection [m]
 
     Returns:
-        bool: True if landing phase detected
+        bool: True if grounded (z <= 0.01m)
     """
-    is_low = p[1] < z_threshold
-    is_descending = v[1] < -v_threshold
-
-    return is_low or is_descending
+    return p[1] <= z_threshold
 
 
 def plot_results_3d_v2(t, drone_data, rotor_data, ref_data, dob_data,
@@ -363,10 +359,13 @@ def main():
         jerk_info = controller.get_jerk_limits()
         print(f"\nJerk Limit Configuration (v2):")
         print(f"  j_max_z: {jerk_info['j_max_z']:.2f} m/s³")
-        print(f"  J_p: {jerk_info['J_p']:.4f} kg·m²")
+        print(f"  h_eff: {jerk_info['h_eff']:.3f} m")
+        print(f"  xg: {jerk_info['xg']:.3f} m")
+        print(f"  J_p = m*(xg²+h_eff²): {jerk_info['J_p']:.4f} kg·m²")
         print(f"  f_max: {jerk_info['f_max']:.2f} N")
-        print(f"  w_hover: {jerk_info['w_hover']:.2f} rad/s")
-        print(f"  alpha_rotor: {jerk_info['alpha_rotor']:.2f} rad/s²")
+        print(f"  w_hover: {jerk_info['w_hover']:.2f} RPM")
+        print(f"  alpha_rotor: {jerk_info['alpha_rotor']:.2f} RPM/s")
+        print(f"  Grounded threshold: 0.01 m")
 
     # State initialization
     w_rotor_idle = params['sim_params']['w_rotor_idle']
@@ -459,10 +458,11 @@ def main():
         f_est = d_est[0:2]
         tau_est = d_est[2]
 
-        # Detect landing mode
+        # Detect grounded state (z <= 0.01m)
+        # Note: Controller internally checks altitude for angular trajectory feedback
         if enable_landing and control_type == 'nmpc':
-            is_landing = detect_landing(p, v_world)
-            controller.set_landing_mode(is_landing, t_now)
+            is_grounded = detect_grounded(p)
+            controller.set_landing_mode(is_grounded, t_now)
 
         # Compute control
         My_comp = 0.0
@@ -557,10 +557,10 @@ def main():
 
         # Print progress
         if i % 1000 == 0:
-            landing_str = " [LANDING]" if (enable_landing and control_type == 'nmpc'
-                                            and controller.is_landing) else ""
+            grounded_str = " [GROUNDED]" if (enable_landing and control_type == 'nmpc'
+                                              and controller.is_grounded) else ""
             print(f"t={t_sim[i]:.2f}s, z={p[1]:.3f}m, pitch={np.rad2deg(theta):.2f}deg, "
-                  f"w_rotor=[{w_rotor[0]:.0f}, {w_rotor[1]:.0f}, {w_rotor[2]:.0f}]{landing_str}")
+                  f"w_rotor=[{w_rotor[0]:.0f}, {w_rotor[1]:.0f}, {w_rotor[2]:.0f}]{grounded_str}")
 
     # Post-processing
     drone_data = {

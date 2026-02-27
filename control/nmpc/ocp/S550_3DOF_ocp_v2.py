@@ -2,8 +2,12 @@
 S550_3DOF_ocp_v2: NMPC with Angular Velocity and Roll/Pitch Feedback
 
 Unlike S550_3DOF_ocp, this version:
-1. Feedbacks angular velocity (q) and pitch (theta) trajectories
-2. Uses dynamically changing max jerk for angular velocity based on DOB moment differentiation
+1. Feedbacks angular velocity (q) and pitch (theta) trajectories based on altitude:
+   - z <= 0.01m (grounded): feedback angular velocity and pitch trajectory
+   - z > 0.01m (airborne): feedback th_des=0, q_des=0
+2. Uses dynamically changing max jerk for angular velocity based on DOB moment differentiation:
+   - j_max_ang = M_dot_y / J_p
+   - J_p = m * (xg^2 + h_eff^2), where h_eff = 0.360m
 3. Position/velocity trajectory uses Hehn trajectory with z-jerk based on rotor dynamics
 
 Author: Geonwoo Kwon
@@ -111,9 +115,12 @@ class S550_3DOF_ocp_v2:
     NMPC OCP with angular velocity and roll/pitch feedback.
 
     Key features:
-    - Position/velocity trajectory: Hehn trajectory with z-jerk = 3 * C_T * w_hover * alpha
-    - Angular trajectory: feedback at landing, otherwise 0
-    - Dynamic jerk limit from DOB moment differentiation
+    - Position/velocity trajectory: Hehn trajectory with z-jerk = 6 * C_T * w_hover * alpha
+    - Angular trajectory:
+        - Grounded (z <= 0.01m): feedback pitch and angular velocity trajectory
+        - Airborne (z > 0.01m): feedback th_des=0, q_des=0
+    - Dynamic jerk limit: j_max_ang = M_dot_y / J_p
+        - J_p = m * (xg^2 + h_eff^2), where h_eff = 0.360m
     """
 
     def __init__(self, DynParam=None, DroneParam=None, MpcParam=None, RotorParam=None):
@@ -250,8 +257,19 @@ class S550_3DOF_ocp_v2:
         self.tau_prev = 0.0
         self.tau_dot_lpf = LowPassFilter(cut_off_freq=10.0, dim=1)
 
-        # Physical parameters for jerk computation (heff not used)
+        # Physical parameters for angular jerk computation
         self.g = 9.81
+        self.h_eff = 0.360  # Effective height [m]
+
+        # Get xg from CoM offset (x-component)
+        com_offset = DynParam.get('com_offset', [0.0, 0.0, 0.0])
+        self.xg = com_offset[0]  # [m]
+
+        # Effective moment of inertia for pendulum dynamics: J_p = m * (xg^2 + h_eff^2)
+        self.J_p = self.m * (self.xg**2 + self.h_eff**2)
+
+        # Altitude threshold for grounded state (0.01 m)
+        self.grounded_threshold = 0.01  # [m]
 
         # Rotor dynamics parameters
         # alpha = 10,000 RPM/s (C_T is in N/(rpm^2), w_hover is in RPM)
@@ -262,8 +280,9 @@ class S550_3DOF_ocp_v2:
         self.f_max = 6.0 * self.C_T * self.w_hover * self.alpha_rotor
         self.j_max_z = self.f_max / self.m  # Convert force rate to acceleration jerk [m/s^3]
 
-        # Landing mode flag
+        # Landing/grounded mode flag
         self.is_landing = False
+        self.is_grounded = False
         self.landing_start_time = None
 
     def setup_tracking(self, tracking_params, target_2d):
@@ -315,8 +334,8 @@ class S550_3DOF_ocp_v2:
         """
         Compute maximum angular jerk based on DOB moment differentiation.
 
-        My_max is set from the differentiation of disturbance estimate (tau_dot).
-        No heff used.
+        Uses effective moment of inertia J_p = m * (xg^2 + h_eff^2) for
+        pendulum dynamics during grounded operation.
 
         Args:
             theta: Current pitch angle [rad] (unused, kept for interface compatibility)
@@ -329,8 +348,8 @@ class S550_3DOF_ocp_v2:
         # My_max from DOB moment differentiation
         M_dot_y_max = abs(tau_dot)
 
-        # Compute angular jerk limit using Jyy (moment of inertia)
-        j_max_ang = M_dot_y_max / self.Jyy
+        # Compute angular jerk limit using J_p = m * (xg^2 + h_eff^2)
+        j_max_ang = M_dot_y_max / self.J_p
 
         # Minimum jerk limit to avoid numerical issues
         j_max_ang = max(j_max_ang, 5.0)
@@ -386,9 +405,9 @@ class S550_3DOF_ocp_v2:
         """
         Solve OCP for trajectory tracking with angular velocity feedback.
 
-        Key difference from S550_3DOF_ocp:
-        - At landing: feedback angular velocity trajectory
-        - Otherwise: feedback th_des=0, q_des=0
+        Altitude-based feedback logic:
+        - z <= 0.01m (grounded): feedback angular velocity and pitch trajectory
+        - z > 0.01m (airborne): feedback th_des=0, q_des=0
 
         Args:
             state: [px, pz, vx_body, vz_body, th, q]
@@ -404,6 +423,13 @@ class S550_3DOF_ocp_v2:
             u_prev = np.array([self.u_hover]*self.nu)
 
         u_ref = self.previous_u0 if self.previous_u0 is not None else u_prev
+
+        # Get current altitude (z-coordinate)
+        z_current = state[1]
+
+        # Determine if grounded based on altitude threshold (0.01m)
+        is_grounded = z_current <= self.grounded_threshold
+        self.is_grounded = is_grounded
 
         # Update DOB moment rate
         tau_dot = self.update_dob_moment(tau_est, dt)
@@ -429,12 +455,12 @@ class S550_3DOF_ocp_v2:
         self.ocp_solver.set(0, 'lbx', state_transformed)
         self.ocp_solver.set(0, 'ubx', state_transformed)
 
-        # Determine angular velocity reference based on landing mode
+        # Determine angular velocity reference based on altitude
         th_des = 0.0
         q_des = 0.0
 
-        if self.is_landing:
-            # At landing: generate angular velocity trajectory
+        if is_grounded:
+            # Grounded (z <= 0.01m): generate angular velocity trajectory
             # Generate trajectory from current state to upright (th=0, q=0)
             self.ang_traj_gen.generate(
                 theta0=theta, q0=q,
@@ -447,14 +473,15 @@ class S550_3DOF_ocp_v2:
             t_ref = t_rel + stage * dt_horizon
             ref_stage = self._traj_to_ref(t_ref)
 
-            # Angular reference
-            if self.is_landing:
+            # Angular reference based on grounded state
+            if is_grounded:
                 th_stage, q_stage = self.ang_traj_gen.get_state(stage * dt_horizon)
                 ref_stage[4] = th_stage
                 ref_stage[5] = q_stage
             else:
-                ref_stage[4] = 0.0  # th_des = 0
-                ref_stage[5] = 0.0  # q_des = 0
+                # Airborne (z > 0.01m): th_des = 0, q_des = 0
+                ref_stage[4] = 0.0
+                ref_stage[5] = 0.0
 
             y_ref = np.concatenate((ref_stage, u_ref))
             self.ocp_solver.set(stage, 'y_ref', y_ref)
@@ -462,7 +489,7 @@ class S550_3DOF_ocp_v2:
         # Terminal reference
         t_ref_N = t_rel + self.T
         ref_N = self._traj_to_ref(t_ref_N)
-        if self.is_landing:
+        if is_grounded:
             th_N, q_N = self.ang_traj_gen.get_state(self.T)
             ref_N[4] = th_N
             ref_N[5] = q_N
@@ -475,7 +502,7 @@ class S550_3DOF_ocp_v2:
 
         # Get current references for logging
         p_des, v_des = self._get_reference(t_rel)
-        if self.is_landing:
+        if is_grounded:
             th_des, q_des = self.ang_traj_gen.get_state(0.0)
         else:
             th_des, q_des = 0.0, 0.0
@@ -550,7 +577,9 @@ class S550_3DOF_ocp_v2:
         """Return current jerk limits for debugging."""
         return {
             'j_max_z': self.j_max_z,
-            'Jyy': self.Jyy,
+            'J_p': self.J_p,
+            'h_eff': self.h_eff,
+            'xg': self.xg,
             'f_max': self.f_max,
             'w_hover': self.w_hover,  # [RPM]
             'alpha_rotor': self.alpha_rotor  # [RPM/s]
