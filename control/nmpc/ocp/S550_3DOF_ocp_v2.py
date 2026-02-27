@@ -125,21 +125,24 @@ class S550_3DOF_ocp_v2:
 
         if DroneParam is None:
             l = 0.265
+            # C_T unit: N/(rpm^2)
             self.C_T = 1.465e-7
             k_m = 0.01569
             DroneParam = {'arm_length': l,
                           'motor_const': self.C_T,
                           'moment_const': k_m}
         else:
+            # C_T unit: N/(rpm^2)
             self.C_T = DroneParam['motor_const']
 
         # Store parameters
         self.m = DynParam['m']
         self.Jyy = DynParam['MoiArray'][1]
 
-        # Default rotor speed limits
-        w_max = 7200.0
-        w_min = 2000.0
+        # Default rotor speed limits [RPM]
+        w_max = 7200.0  # [RPM]
+        w_min = 2000.0  # [RPM]
+        # C_T is in N/(rpm^2), so u = C_T * w^2 gives thrust in N
         u_max = self.C_T * w_max**2
         u_min = self.C_T * w_min**2
 
@@ -226,7 +229,7 @@ class S550_3DOF_ocp_v2:
         # Hover thrust per group: mg/6 (hexarotor: 3 groups x 2 motors)
         self.u_hover = DynParam['m'] * 9.81 / 6.0
 
-        # Hover rotor speed [rad/s]
+        # Hover rotor speed [RPM] (C_T is in N/(rpm^2))
         self.w_hover = np.sqrt(self.u_hover / self.C_T)
 
         # Trajectory generation
@@ -247,23 +250,17 @@ class S550_3DOF_ocp_v2:
         self.tau_prev = 0.0
         self.tau_dot_lpf = LowPassFilter(cut_off_freq=10.0, dim=1)
 
-        # Physical parameters for jerk computation
-        # h_eff = 360 mm (effective height from contact point)
-        self.h_eff = 0.360  # [m]
-        self.x_g = abs(DynParam.get('com_offset', [0.0, 0.0, 0.0])[0])  # CoM offset in x
+        # Physical parameters for jerk computation (heff not used)
         self.g = 9.81
 
-        # Compute J_p = m * (x_g^2 + h_eff^2)
-        self.J_p = self.m * (self.x_g**2 + self.h_eff**2)
-
         # Rotor dynamics parameters
-        # alpha = 10,000 RPM/s = 10000 * 2*pi/60 rad/s
-        self.alpha_rotor = 10000.0 * 2.0 * np.pi / 60.0  # [rad/s^2]
+        # alpha = 10,000 RPM/s (C_T is in N/(rpm^2), w_hover is in RPM)
+        self.alpha_rotor = 10000.0  # [RPM/s]
 
-        # z-axis max jerk: j_max_z = 3 * C_T * w_hover * alpha (for 3 rotor groups)
-        # Actually: f_max = 6 * C_T * w_hover * alpha (total for hexarotor)
+        # z-axis max jerk: f_max = 6 * C_T * w_hover * alpha (total for hexarotor)
+        # C_T [N/rpm^2] * w_hover [rpm] * alpha [rpm/s] = [N/s] (force rate)
         self.f_max = 6.0 * self.C_T * self.w_hover * self.alpha_rotor
-        self.j_max_z = self.f_max / self.m  # Convert force to acceleration jerk
+        self.j_max_z = self.f_max / self.m  # Convert force rate to acceleration jerk [m/s^3]
 
         # Landing mode flag
         self.is_landing = False
@@ -318,30 +315,22 @@ class S550_3DOF_ocp_v2:
         """
         Compute maximum angular jerk based on DOB moment differentiation.
 
-        Formula from image:
-        M_dot_y_max = -x_g * f_max - m*g*h_eff*theta_dot*cos(theta) - m*g*x_g*theta_dot*sin(theta)
-        omega_dot_y_max = (1/J_p) * |M_dot_y_max|
+        My_max is set from the differentiation of disturbance estimate (tau_dot).
+        No heff used.
 
         Args:
-            theta: Current pitch angle [rad]
-            q: Current pitch rate [rad/s]
+            theta: Current pitch angle [rad] (unused, kept for interface compatibility)
+            q: Current pitch rate [rad/s] (unused, kept for interface compatibility)
             tau_dot: Filtered moment rate from DOB [Nm/s]
 
         Returns:
             j_max_ang: Maximum angular jerk [rad/s^3]
         """
-        # Compute M_dot_y_max from physical constraints
-        M_dot_term1 = -self.x_g * self.f_max
-        M_dot_term2 = -self.m * self.g * self.h_eff * q * np.cos(theta)
-        M_dot_term3 = -self.m * self.g * self.x_g * q * np.sin(theta)
+        # My_max from DOB moment differentiation
+        M_dot_y_max = abs(tau_dot)
 
-        M_dot_y_max = abs(M_dot_term1 + M_dot_term2 + M_dot_term3)
-
-        # Also consider actual DOB moment rate
-        M_dot_y_max = max(M_dot_y_max, abs(tau_dot))
-
-        # Compute angular jerk limit
-        j_max_ang = M_dot_y_max / self.J_p
+        # Compute angular jerk limit using Jyy (moment of inertia)
+        j_max_ang = M_dot_y_max / self.Jyy
 
         # Minimum jerk limit to avoid numerical issues
         j_max_ang = max(j_max_ang, 5.0)
@@ -561,8 +550,8 @@ class S550_3DOF_ocp_v2:
         """Return current jerk limits for debugging."""
         return {
             'j_max_z': self.j_max_z,
-            'J_p': self.J_p,
+            'Jyy': self.Jyy,
             'f_max': self.f_max,
-            'w_hover': self.w_hover,
-            'alpha_rotor': self.alpha_rotor
+            'w_hover': self.w_hover,  # [RPM]
+            'alpha_rotor': self.alpha_rotor  # [RPM/s]
         }
