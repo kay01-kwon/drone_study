@@ -238,7 +238,7 @@ class S550_3DOF_ocp_v2:
         self.u_hover = DynParam['m'] * 9.81 / 6.0
 
         # Hover rotor speed [RPM] (C_T is in N/(rpm^2))
-        self.w_hover = np.sqrt(self.u_hover / self.C_T)
+        self.w_hover = np.sqrt(self.u_hover / self.C_T * 1.3)
 
         # Trajectory generation
         self.traj_gen = None
@@ -274,7 +274,7 @@ class S550_3DOF_ocp_v2:
 
         # Rotor dynamics parameters
         # alpha = 10,000 RPM/s (C_T is in N/(rpm^2), w_hover is in RPM)
-        self.alpha_rotor = 10000.0  # [RPM/s]
+        self.alpha_rotor = 15000.0  # [RPM/s]
 
         # z-axis max jerk: f_max = 6 * 2 * C_T * w_hover * alpha (total for hexarotor)
         # Single rotor: dT/dt = d(C_T * w^2)/dt = 2 * C_T * w * alpha
@@ -355,7 +355,7 @@ class S550_3DOF_ocp_v2:
         j_max_ang = M_dot_y_max / self.J_p
 
         # Minimum jerk limit to avoid numerical issues
-        j_max_ang = max(j_max_ang, 5.0)
+        # j_max_ang = max(j_max_ang, 0.0001)
 
         return j_max_ang
 
