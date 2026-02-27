@@ -260,6 +260,26 @@ def plot_results_3d_v2(t, drone_data, rotor_data, ref_data, dob_data,
         plt.savefig('angular_jerk_limit_v2.png', dpi=300)
         plt.show()
 
+    # Rotor acceleration plot
+    if 'alpha_rotor' in rotor_data:
+        fig_alpha, axes_alpha = plt.subplots(rotor_data['alpha_rotor'].shape[1], 1,
+                                              figsize=(10, 8), sharex=True)
+        if rotor_data['alpha_rotor'].shape[1] == 1:
+            axes_alpha = [axes_alpha]
+
+        for i in range(rotor_data['alpha_rotor'].shape[1]):
+            axes_alpha[i].plot(t, rotor_data['alpha_rotor'][:, i], 'r-', linewidth=1.5,
+                               label=rf'$\alpha_{{{i+1}}}$')
+            axes_alpha[i].set_ylabel(f'$\\alpha_{{{i+1}}}$ [RPM/s]')
+            axes_alpha[i].legend(loc='upper right')
+            axes_alpha[i].grid(True, alpha=0.3)
+
+        axes_alpha[-1].set_xlabel('Time [s]')
+        fig_alpha.suptitle('Rotor Angular Acceleration', fontsize=14)
+        plt.tight_layout()
+        plt.savefig('rotor_acceleration_v2.png', dpi=300)
+        plt.show()
+
     # NMPC solve time histogram
     if nmpc_solve_times is not None and len(nmpc_solve_times) > 0:
         solve_times_ms = np.array(nmpc_solve_times) * 1000
