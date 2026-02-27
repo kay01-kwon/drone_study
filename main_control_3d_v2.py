@@ -5,7 +5,7 @@
 Key differences from main_control_3d.py:
 1. Uses S550_3DOF_ocp_v2 with angular velocity and roll/pitch feedback
 2. Position/velocity trajectory uses Hehn trajectory with z-jerk based on rotor dynamics:
-   - j_max_z = 3 * C_T * w_hover * alpha (alpha = 10,000 RPM/s)
+   - j_max_z = 12 * C_T * w_hover * alpha (6 rotors × 2 from chain rule, alpha = 10,000 RPM/s)
 3. Angular trajectory with altitude-based feedback:
    - z <= 0.01m (grounded): feedback angular velocity and pitch trajectory
    - z > 0.01m (airborne): feedback pitch=0, angular velocity=0

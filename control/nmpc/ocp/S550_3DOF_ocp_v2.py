@@ -8,7 +8,8 @@ Unlike S550_3DOF_ocp, this version:
 2. Uses dynamically changing max jerk for angular velocity based on DOB moment differentiation:
    - j_max_ang = M_dot_y / J_p
    - J_p = m * (xg^2 + h_eff^2), where h_eff = 0.360m
-3. Position/velocity trajectory uses Hehn trajectory with z-jerk based on rotor dynamics
+3. Position/velocity trajectory uses Hehn trajectory with z-jerk based on rotor dynamics:
+   - j_max_z = 12 * C_T * w_hover * alpha (6 rotors × 2 from d(w²)/dt chain rule)
 
 Author: Geonwoo Kwon
 Date: 2026-02-27
@@ -115,7 +116,7 @@ class S550_3DOF_ocp_v2:
     NMPC OCP with angular velocity and roll/pitch feedback.
 
     Key features:
-    - Position/velocity trajectory: Hehn trajectory with z-jerk = 6 * C_T * w_hover * alpha
+    - Position/velocity trajectory: Hehn trajectory with z-jerk = 12 * C_T * w_hover * alpha
     - Angular trajectory:
         - Grounded (z <= 0.01m): feedback pitch and angular velocity trajectory
         - Airborne (z > 0.01m): feedback th_des=0, q_des=0
@@ -275,9 +276,11 @@ class S550_3DOF_ocp_v2:
         # alpha = 10,000 RPM/s (C_T is in N/(rpm^2), w_hover is in RPM)
         self.alpha_rotor = 10000.0  # [RPM/s]
 
-        # z-axis max jerk: f_max = 6 * C_T * w_hover * alpha (total for hexarotor)
+        # z-axis max jerk: f_max = 6 * 2 * C_T * w_hover * alpha (total for hexarotor)
+        # Single rotor: dT/dt = d(C_T * w^2)/dt = 2 * C_T * w * alpha
+        # Hexarotor total: 6 * 2 * C_T * w_hover * alpha
         # C_T [N/rpm^2] * w_hover [rpm] * alpha [rpm/s] = [N/s] (force rate)
-        self.f_max = 6.0 * self.C_T * self.w_hover * self.alpha_rotor
+        self.f_max = 6.0 * 2.0 * self.C_T * self.w_hover * self.alpha_rotor
         self.j_max_z = self.f_max / self.m  # Convert force rate to acceleration jerk [m/s^3]
 
         # Landing/grounded mode flag
