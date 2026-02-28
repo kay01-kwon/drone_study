@@ -90,10 +90,6 @@ def main():
     alpha_max = params['true_rotor_params']['alpha_rotor_max']
     num_rotors = params['true_rotor_params']['num_rotors']
 
-    # Hovering ground z offset: h_g + z_off (landing gear height + CoM z offset)
-    # Subtract this from z to make ground level = 0 for control feedback
-    hg_zoff = drone_sim_model.h_g + drone_sim_model.z_off
-
     rotor_sim_model = RotorModel(RotorParams=params['true_rotor_params'])
     hexa_converter = HexaConverter(DroneParams=params['true_drone_params'],
                                    RotorParams=params['true_rotor_params'],
@@ -179,11 +175,7 @@ def main():
         p, v, q, w = drone_sim_model.unpack_state(s_drone)
         w_rotor, alpha_rotor = rotor_sim_model.unpack_state(s_rotor)
         roll, pitch, yaw = quaternion_to_euler(q)
-
-        # Subtract hg_zoff from z to make ground level = 0 for control feedback
-        p_feedback = p.copy()
-        p_feedback[2] = p[2] - hg_zoff
-        s_feedback = np.concatenate([p_feedback, v, q, w])
+        s_feedback = np.concatenate([p, v, q, w])
 
         # Convert body velocity to world velocity for trajectory generation
         R = quaternion_to_rotm(q)
@@ -232,8 +224,8 @@ def main():
             t_solve_start = time.perf_counter()
 
             if control_mode == 'tracking':
-                # Hehn trajectory tracking (use z with hg_zoff subtracted)
-                state_3d = np.array([p[0], p[1], p_feedback[2],
+                # Hehn trajectory tracking
+                state_3d = np.array([p[0], p[1], p[2],
                                      v_world[0], v_world[1], v_world[2]])
                 status, w_cmd, p_des, v_des = controller.solve_for_hehn_trajectory(
                     s_feedback, state_3d, t_now)
