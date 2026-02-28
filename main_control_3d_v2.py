@@ -566,12 +566,19 @@ def main():
             t_solve_end = time.perf_counter()
             nmpc_solve_times.append(t_solve_end - t_solve_start)
 
-            # DOB compensation
+            # DOB compensation with liftoff-aware moment latching
+            # - Grounded: DOB moment ignored (ground reaction distorts estimate)
+            # - Liftoff: DOB moment latched at liftoff instant
+            # - Airborne: latched moment used for consistent compensation
             if dob is not None:
                 u_mpc = hexa_converter.compute_u(w_cmd)
                 u_comp = u_mpc.copy()
+
+                # Get effective DOB moment (latched during liftoff transition)
+                tau_effective = controller.get_tau_effective()
+
                 u_comp[0] -= d_est[1]  # subtract f_ext_z from Fz
-                u_comp[1] -= d_est[2]  # subtract tau_ext from My
+                u_comp[1] -= tau_effective  # subtract latched tau_ext from My
                 My_comp = u_comp[1]
                 w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
             else:

@@ -288,6 +288,14 @@ class S550_3DOF_ocp_v2:
         self.is_grounded = False
         self.landing_start_time = None
 
+        # DOB moment latch for liftoff transition
+        # - Grounded: DOB moment ignored (ground reaction distorts estimate)
+        # - Liftoff detected: latch (freeze) DOB moment at that instant
+        # - Airborne: use latched moment for compensation
+        self.was_grounded = True
+        self.tau_latched = 0.0
+        self.is_tau_latched = False
+
     def setup_tracking(self, tracking_params, target_2d):
         """Initialize Hehn trajectory generator for tracking mode."""
         from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
@@ -309,6 +317,41 @@ class S550_3DOF_ocp_v2:
         self.is_landing = is_landing
         if is_landing and t_now is not None:
             self.landing_start_time = t_now
+
+    def process_dob_moment_for_liftoff(self, tau_est, is_grounded):
+        """
+        Process DOB moment with liftoff-aware latching.
+
+        Strategy:
+        - Grounded: DOB moment ignored (ground reaction force distorts estimate)
+        - Liftoff detected (was_grounded -> !is_grounded): latch current DOB moment
+        - Airborne: use latched moment for consistent compensation
+
+        Args:
+            tau_est: Current DOB moment estimate [Nm]
+            is_grounded: Whether drone is currently grounded
+
+        Returns:
+            tau_effective: DOB moment to use for control [Nm]
+        """
+        if is_grounded:
+            # Grounded: ignore DOB (ground reaction distorts it)
+            self.was_grounded = True
+            self.is_tau_latched = False
+            return 0.0
+
+        # Airborne
+        if self.was_grounded and not is_grounded:
+            # Liftoff transition detected: latch current DOB moment
+            self.tau_latched = tau_est
+            self.is_tau_latched = True
+            self.was_grounded = False
+
+        if self.is_tau_latched:
+            return self.tau_latched
+        else:
+            # Normal airborne operation (no liftoff transition)
+            return tau_est
 
     def update_dob_moment(self, tau_est, dt):
         """
@@ -434,8 +477,14 @@ class S550_3DOF_ocp_v2:
         is_grounded = z_current <= self.grounded_threshold
         self.is_grounded = is_grounded
 
-        # Update DOB moment rate
-        tau_dot = self.update_dob_moment(tau_est, dt)
+        # Process DOB moment with liftoff-aware latching
+        # - Grounded: ignore DOB (ground reaction distorts estimate)
+        # - Liftoff: latch DOB moment at that instant
+        # - Airborne: use latched moment
+        tau_effective = self.process_dob_moment_for_liftoff(tau_est, is_grounded)
+
+        # Update DOB moment rate using effective (latched) moment
+        tau_dot = self.update_dob_moment(tau_effective, dt)
 
         # Compute dynamic angular jerk limit
         theta = state[4]
@@ -520,6 +569,22 @@ class S550_3DOF_ocp_v2:
         w_cmd = np.sqrt(u / self.C_T)
 
         return status, w_cmd, p_des, v_des, th_des, q_des
+
+    def get_tau_effective(self):
+        """
+        Get the effective DOB moment after liftoff-aware processing.
+
+        Returns:
+            tau_effective: The latched/processed DOB moment [Nm]
+                          - 0.0 if grounded
+                          - latched value if airborne after liftoff
+        """
+        if self.is_grounded:
+            return 0.0
+        elif self.is_tau_latched:
+            return self.tau_latched
+        else:
+            return self.tau_prev  # fallback to last processed value
 
     def _generate_trajectory_simple(self, state_2d, t_now):
         """Generate Hehn trajectory with custom z-jerk limit."""
