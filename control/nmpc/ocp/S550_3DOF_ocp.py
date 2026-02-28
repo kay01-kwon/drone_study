@@ -17,6 +17,12 @@ class ScaledTrajectory:
     def get_velocity(self, t):
         return self._traj.get_velocity(t / self._s) / self._s
 
+    def get_acceleration(self, t):
+        return self._traj.get_acceleration(t / self._s) / (self._s ** 2)
+
+    def get_jerk(self, t):
+        return self._traj.get_jerk(t / self._s) / (self._s ** 3)
+
     @property
     def duration(self):
         return self._traj.duration * self._s

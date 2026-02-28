@@ -130,6 +130,33 @@ def setup_controller_3d_v2(control_type, dob_type, params):
     return controller, dob
 
 
+def estimate_acceleration(state, w_rotor, C_T, m):
+    """
+    Model-based acceleration estimation from current thrust and pitch.
+    a_world = R @ (f_body / m) + g_vec
+
+    :param state: [px, pz, vx, vz, th, q]
+    :param w_rotor: rotor speeds [w1, w2, w3] in rad/s
+    :param C_T: thrust coefficient
+    :param m: mass
+    :return: [ax, az] in world frame
+    """
+    from utils.math_tool import pitch_to_rotm
+
+    theta = state[4]
+    R = pitch_to_rotm(theta)
+
+    # Total thrust from rotor speeds (hexarotor: 2 motors per group)
+    f_total = 2.0 * C_T * np.sum(w_rotor**2)
+    f_body = np.array([0.0, f_total])
+
+    # World frame acceleration
+    g_vec = np.array([0.0, -9.81])
+    a_world = R @ (f_body / m) + g_vec
+
+    return a_world  # [ax, az]
+
+
 def detect_grounded(p, z_threshold=0.01):
     """
     Detect if the drone is grounded (altitude <= 0.01m).
@@ -145,7 +172,7 @@ def detect_grounded(p, z_threshold=0.01):
 
 
 def plot_results_3d_v2(t, drone_data, rotor_data, ref_data, dob_data,
-                       ang_ref_data=None, nmpc_solve_times=None):
+                       ang_ref_data=None, jerk_data=None, nmpc_solve_times=None):
     """Plot results for 3DOF v2 simulation with angular reference"""
     fig, axes = plt.subplots(4, 2, figsize=(14, 12))
 
@@ -278,6 +305,35 @@ def plot_results_3d_v2(t, drone_data, rotor_data, ref_data, dob_data,
         fig_alpha.suptitle('Rotor Angular Acceleration', fontsize=14)
         plt.tight_layout()
         plt.savefig('rotor_acceleration_v2.png', dpi=300)
+        plt.show()
+
+    # Jerk comparison plot: drone jerk vs Hehn trajectory jerk
+    if jerk_data is not None:
+        fig_jerk, axes_jerk = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+
+        # Jerk X
+        axes_jerk[0].plot(t, jerk_data['jerk_drone'][:, 0], 'b-', linewidth=1.0,
+                          label='Drone $j_x$')
+        axes_jerk[0].plot(t, jerk_data['jerk_henh'][:, 0], 'r--', linewidth=1.5,
+                          label='Hehn $j_x$')
+        axes_jerk[0].set_ylabel(r'Jerk X [m/s$^3$]')
+        axes_jerk[0].set_title('Jerk X: Drone vs Hehn Trajectory')
+        axes_jerk[0].legend()
+        axes_jerk[0].grid(True, alpha=0.3)
+
+        # Jerk Z
+        axes_jerk[1].plot(t, jerk_data['jerk_drone'][:, 1], 'b-', linewidth=1.0,
+                          label='Drone $j_z$')
+        axes_jerk[1].plot(t, jerk_data['jerk_henh'][:, 1], 'r--', linewidth=1.5,
+                          label='Hehn $j_z$')
+        axes_jerk[1].set_ylabel(r'Jerk Z [m/s$^3$]')
+        axes_jerk[1].set_xlabel('Time [s]')
+        axes_jerk[1].set_title('Jerk Z: Drone vs Hehn Trajectory')
+        axes_jerk[1].legend()
+        axes_jerk[1].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig('jerk_comparison_3d_v2.png', dpi=300)
         plt.show()
 
     # NMPC solve time histogram
@@ -439,6 +495,9 @@ def main():
     tau_actual_hist = []
     My_comp_hist = []
     nmpc_solve_times = []
+    acc_hist = []
+    jerk_henh_x_hist = []
+    jerk_henh_z_hist = []
 
     # True Jyy for actual physical disturbance computation
     Jyy_true = params['true_dynamic_params']['MoiArray'][1]
@@ -532,6 +591,21 @@ def main():
             My_comp = u[1]
             w_cmd = hexa_converter.compute_des_rotor_speed(u)
 
+        # Compute acceleration for jerk calculation
+        acc = estimate_acceleration(s_body, w_rotor, C_T, m_nom)
+        acc_hist.append(acc.copy())
+
+        # Hehn trajectory jerk (tracking mode with NMPC only)
+        if (control_mode == 'tracking' and control_type == 'nmpc'
+                and controller.traj is not None):
+            t_rel = t_now - controller.t_start
+            jerk_henh_3d = controller.traj.get_jerk(t_rel)
+            jerk_henh_x_hist.append(jerk_henh_3d[0])
+            jerk_henh_z_hist.append(jerk_henh_3d[2])
+        else:
+            jerk_henh_x_hist.append(0.0)
+            jerk_henh_z_hist.append(0.0)
+
         # Store history
         pos_hist.append(p.copy())
         vel_hist.append(v_world.copy())
@@ -613,6 +687,16 @@ def main():
         'My_comp': np.array(My_comp_hist)
     }
 
+    # Compute drone jerk from acceleration (numerical differentiation)
+    acc_array = np.array(acc_hist)  # [N-1, 2]
+    jerk_drone = np.diff(acc_array, axis=0) / dt  # [N-2, 2]
+    jerk_drone = np.vstack([np.zeros((1, 2)), jerk_drone])  # pad first sample
+
+    jerk_data = {
+        'jerk_drone': jerk_drone,
+        'jerk_henh': np.column_stack([jerk_henh_x_hist, jerk_henh_z_hist])
+    }
+
     # Print final statistics
     print(f"\n{'='*60}")
     print("Simulation Complete (V2)")
@@ -644,6 +728,7 @@ def main():
     # Plot results
     plot_results_3d_v2(t_sim[:-1], drone_data, rotor_data, ref_data, dob_data,
                        ang_ref_data=ang_ref_data,
+                       jerk_data=jerk_data,
                        nmpc_solve_times=nmpc_solve_times if control_type == 'nmpc' else None)
 
     # Cleanup for NMPC
