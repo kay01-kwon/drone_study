@@ -25,3 +25,15 @@ nmpc_params:
             10.0, 10.0, 10.0, 10.0,   # qw, qx, qy, qz
             5.0, 5.0, 5.0 ]     # wx, wy, wz
   RArray: 0.1     # u1...u6
+
+regulation:
+  setpoint_position: [0.0, 0.0, 1.0]  # [x, y, z] target [m]
+  setpoint_yaw: 0.0                    # yaw target [rad]
+
+tracking:
+  target_position: [0.0, 0.0, 1.0]  # [x, y, z] target [m]
+  a_max: 13.0                        # Max total acceleration [m/s^2]
+  a_min: 1.0                         # Min total acceleration [m/s^2]
+  omega_xy_max: 13.0                 # Max angular rate [rad/s]
+  time_scale: 1.0                    # Trajectory time stretch factor
+  replan_freq: 100                   # Trajectory replanning frequency [Hz]

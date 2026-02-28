@@ -44,6 +44,26 @@ def load_parameters(control_type, dob_type):
         params['nominal_drone_params'] = yaml_loader.get_drone_params(config_control)
         params['nominal_rotor_params'] = yaml_loader.get_rotor_params(config_control)
 
+        # Load tracking params for Hehn trajectory (if present)
+        import numpy as np
+        tracking = config_control.get('tracking', {})
+        params['tracking_params'] = {
+            'target_position': np.array(tracking.get('target_position', [0.0, 0.0, 1.0])),
+            'a_max': tracking.get('a_max', 13.0),
+            'a_min': tracking.get('a_min', 1.0),
+            'omega_xy_max': tracking.get('omega_xy_max', 13.0),
+            'time_scale': tracking.get('time_scale', 1.0),
+            'replan_freq': tracking.get('replan_freq', 100.0),
+        }
+
+        # Load regulation params (if present)
+        regulation = config_control.get('regulation', {})
+        if regulation:
+            params['nmpc_regulation_params'] = {
+                'setpoint_position': np.array(regulation.get('setpoint_position', [0.0, 0.0, 1.0])),
+                'setpoint_yaw': regulation.get('setpoint_yaw', 0.0),
+            }
+
 
     elif control_type == "pd":
         config_control = yaml_loader.load_yaml('config/control/pd/pd_params.yaml')
