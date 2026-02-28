@@ -3,7 +3,7 @@ S550 simulation model
 - Full 6 DOF Dynamics (Position + Attitude)
 - Quaternion-based attitude dynamics
 - COM offset included
-- Ground contact included
+- Front/Rear landing gear contact dynamics (like S550_3d_model)
 """
 
 import numpy as np
@@ -23,7 +23,7 @@ class S550_state:
 
 class S550_Sim_Model:
     """
-    S550_Sim_Model
+    S550_Sim_Model with front/rear landing gear contact dynamics
     :param : DynamicParams
     """
 
@@ -34,24 +34,51 @@ class S550_Sim_Model:
         Jxx = DynamicParams['MoiArray'][0]
         Jyy = DynamicParams['MoiArray'][1]
         Jzz = DynamicParams['MoiArray'][2]
+        self.Jyy = Jyy
         self.J = np.diag([Jxx, Jyy, Jzz])
         self.J_inv = np.diag([1/Jxx, 1/Jyy, 1/Jzz])
-        self.r_off = DynamicParams['com_offset']
-        self.g = -9.81
-        self.g_vec = np.array([0, 0, self.g])
+
+        # COM offset [x_off, y_off, z_off]
+        self.x_off = DynamicParams['com_offset'][0]
+        self.y_off = DynamicParams['com_offset'][1]
+        self.z_off = DynamicParams['com_offset'][2]
+        self.r_off = np.array(DynamicParams['com_offset'])
+
+        # Gravity
+        self.g = 9.81
+        self.g_vec = np.array([0, 0, -self.g])
 
         self.e3 = np.array([0, 0, 1.0])
 
-        # Landing gear geometry (body frame) - from CAD drawing
-        self.landing_gear_width = 0.28845  # Distance between landing gear legs [m]
-        self.landing_gear_height = 0.28837  # Height from ground to COM [m]
-        # Contact points in body frame (2 legs, left and right)
-        # COM is at origin, contact points are below at -height
-        self.contact_points_body = np.array([
-            [0.0, self.landing_gear_width/2, -self.landing_gear_height],   # Right leg
-            [0.0, -self.landing_gear_width/2, -self.landing_gear_height]   # Left leg
-        ])
-        self.tip_over_angle = np.deg2rad(80)  # Maximum roll/pitch before stuck [rad]
+        # Landing gear geometry (matching S550_3d_model)
+        self.x_g = 0.256 / 2.0   # Half of front-rear distance [m]
+        self.y_g = 0.288 / 2.0   # Half of left-right distance [m]
+        self.h_g = 0.258         # Landing gear height [m]
+
+        # Front landing gear contact parameters
+        self.r_f = np.sqrt((self.x_g - self.x_off)**2
+                           + (self.h_g + self.z_off)**2)
+        self.Jyy_f = Jyy + self.m * self.r_f**2
+        self.delta_f = np.arctan2(self.x_g - self.x_off,
+                                  self.h_g + self.z_off)
+
+        # Rear landing gear contact parameters
+        self.r_b = np.sqrt((self.x_g + self.x_off)**2
+                           + (self.h_g + self.z_off)**2)
+        self.Jyy_b = Jyy + self.m * self.r_b**2
+        self.delta_b = np.arctan2(self.x_g + self.x_off,
+                                  self.h_g + self.z_off)
+
+        # Normal force (no thrust)
+        self.N_f = self.m * self.g / 2.0
+        self.N_b = self.N_f
+
+        # Contact state
+        self.is_contact = True
+        self.z_liftoff_threshold = 0.005  # 5mm hysteresis
+
+        # Tip over angle limit
+        self.tip_over_angle = np.deg2rad(80)
 
     def pack_state(self, p, v, q, w):
         """Pack state into vector"""
@@ -93,7 +120,7 @@ class S550_Sim_Model:
 
     def dynamics(self, t, s, u):
         """
-        Dynamics function of S550 - COM offset included
+        Dynamics function of S550 with front/rear landing gear contact
         :param t: time (Not use, but required for rk4 interface)
         :param s: state vector [13]
         :param u: control input - Thrust [1], Moment [3]
@@ -103,45 +130,275 @@ class S550_Sim_Model:
         # Unpack state and control input
         p, v_world, q, w = self._unpack_state_world(s)
         # Normalize quaternion
-        q = q/np.linalg.norm(q,2)
+        q = q / np.linalg.norm(q, 2)
         f, M = self.unpack_control_input(u)
 
-        # Simple ground contact (like Gazebo)
-        R = quaternion_to_rotm(q)
-        z = p[2]
+        # Get Euler angles for contact detection
+        roll, pitch, yaw = quaternion_to_euler(q)
 
-        # Ground contact force (simple spring-damper)
-        if z < 0.0:
-            K_ground = 60000.0  # N/m
-            D_ground = 500.0   # N*s/m
-            mu = 0.8           # Friction coefficient
+        sdot = self._flight_dynamics(s, u)
 
-            # Normal force
-            f_normal = np.array([0.0, 0.0, -K_ground * z - D_ground * v_world[2]])
-            f_normal[2] = max(0.0, f_normal[2])  # Only upward
+        if self.is_contact:
+            # Check gear heights to determine contact mode
+            z_front, z_rear = self._compute_gear_heights(s)
+            z_contact_tol = 0.005  # 5mm tolerance
 
-            # Friction force (proportional to normal force and velocity)
-            v_horizontal = np.array([v_world[0], v_world[1], 0.0])
-            v_h_norm = np.linalg.norm(v_horizontal)
-            if v_h_norm > 1e-6:
-                f_friction = -mu * f_normal[2] * v_horizontal / v_h_norm
+            # Both gears near ground → full contact
+            if z_front < z_contact_tol and z_rear < z_contact_tol:
+                self._compute_Normal_force(u, pitch)
+
+                # Both normal forces positive → fully grounded
+                if self.N_f > 0 and self.N_b > 0:
+                    K_w_damp = 500.0
+                    # Damp all angular velocities, keep position/velocity at rest
+                    dpdt = np.zeros(3)
+                    dvdt = np.zeros(3)
+                    w_quat = vec_to_quaternion_form(w)
+                    dqdt = 0.5 * otimes(q, w_quat)
+                    dwdt = -K_w_damp * w
+                    sdot = self.pack_state(dpdt, dvdt, dqdt, dwdt)
+                # Both negative → liftoff
+                elif self.N_f <= 0.0 and self.N_b <= 0.0:
+                    sdot = self._flight_dynamics(s, u)
+                    self.is_contact = False
+                # Front only → front contact
+                elif self.N_f > 0 and self.N_b <= 0.0:
+                    sdot = self._front_dynamics(s, u)
+                # Rear only → rear contact
+                elif self.N_b > 0 and self.N_f <= 0.0:
+                    sdot = self._rear_dynamics(s, u)
+
+            # Only front gear on ground (pitch > 0 → nose up)
+            elif z_front < z_contact_tol:
+                sdot = self._front_dynamics(s, u)
+
+            # Only rear gear on ground (pitch < 0 → nose down)
+            elif z_rear < z_contact_tol:
+                sdot = self._rear_dynamics(s, u)
+
+            # Both gears above ground → flight
             else:
-                f_friction = np.zeros(3)
-            f_friction += -D_ground * v_horizontal  # Viscous damping
+                sdot = self._flight_dynamics(s, u)
+                self.is_contact = False
 
-            f_ground = f_normal + f_friction
         else:
-            f_ground = np.zeros(3)
+            # Flight mode - check for landing
+            z_front, z_rear = self._compute_gear_heights(s)
+            vz = v_world[2]
 
-        # Linear dynamics
+            if (z_front <= 0.0 or z_rear <= 0.0) and vz <= 0.0:
+                # Landing detected
+                self.is_contact = True
+                print(f'Landing detected: z_front={z_front:.4f}, z_rear={z_rear:.4f}, '
+                      f'vz={vz:.4f}, pitch={np.rad2deg(pitch):.2f}deg')
+
+                if np.abs(pitch) <= 5.0 * np.pi / 180.0:
+                    # Near-level landing → full contact
+                    K_w_damp = 500.0
+                    dpdt = np.zeros(3)
+                    dvdt = np.zeros(3)
+                    w_quat = vec_to_quaternion_form(w)
+                    dqdt = 0.5 * otimes(q, w_quat)
+                    dwdt = -K_w_damp * w
+                    sdot = self.pack_state(dpdt, dvdt, dqdt, dwdt)
+                elif pitch > 0.0:
+                    sdot = self._rear_dynamics(s, u)
+                else:
+                    sdot = self._front_dynamics(s, u)
+            else:
+                sdot = self._flight_dynamics(s, u)
+
+        return sdot
+
+    def _compute_Normal_force(self, u, pitch):
+        """Compute normal forces on front and rear landing gear."""
+        f, M = self.unpack_control_input(u)
+        My = M[1]  # Pitch moment
+
+        # Front normal force
+        self.N_f = 0.5 * (self.m * self.g * (1.0 + self.x_off / self.x_g)
+                         - f + My / self.x_g)
+
+        # Rear normal force
+        self.N_b = 0.5 * (self.m * self.g * (1.0 - self.x_off / self.x_g)
+                         - f - My / self.x_g)
+
+    def _compute_gear_heights(self, state):
+        """Compute world-frame z-coordinates of front and rear landing gear."""
+        p = state[0:3]
+        q = state[6:10]
+        q = q / np.linalg.norm(q, 2)
+        roll, pitch, yaw = quaternion_to_euler(q)
+
+        sth = np.sin(pitch)
+        cth = np.cos(pitch)
+
+        # Front gear z in world frame (simplified: mainly pitch dependent)
+        z_front = (p[2]
+                   - sth * (self.x_g - self.x_off)
+                   - cth * (self.h_g + self.z_off))
+
+        # Rear gear z in world frame
+        z_rear = (p[2]
+                  + sth * (self.x_g + self.x_off)
+                  - cth * (self.h_g + self.z_off))
+
+        return z_front, z_rear
+
+    def _flight_dynamics(self, state, u):
+        """Flight dynamics (no contact)."""
+        p, v_world, q, w = self._unpack_state_world(state)
+        q = q / np.linalg.norm(q, 2)
+        f, M = self.unpack_control_input(u)
+        R = quaternion_to_rotm(q)
+
         dpdt = v_world
-        dvdt = 1/self.m * (R @ (f*self.e3) + f_ground) + self.g_vec
+        dvdt = 1 / self.m * (R @ (f * self.e3)) + self.g_vec
 
-        # Angular dynamics (simplified - no ground torque)
         w_quat = vec_to_quaternion_form(w)
-        dqdt = 0.5*otimes(q, w_quat)
+        dqdt = 0.5 * otimes(q, w_quat)
         J_w = self.J @ w
-        dwdt = self.J_inv @ (M - np.cross(w,J_w)
-                         - np.cross(self.r_off, f*self.e3))
+        # Include COM offset coupling
+        dwdt = self.J_inv @ (M - np.cross(w, J_w)
+                             - np.cross(self.r_off, f * self.e3))
 
         return self.pack_state(dpdt, dvdt, dqdt, dwdt)
+
+    def _front_dynamics(self, state, u):
+        """Front landing gear contact dynamics."""
+        p, v_world, q, w = self._unpack_state_world(state)
+        q = q / np.linalg.norm(q, 2)
+        f, M = self.unpack_control_input(u)
+        R = quaternion_to_rotm(q)
+        roll, pitch, yaw = quaternion_to_euler(q)
+
+        W_f = R @ (f * self.e3)
+        fz = W_f[2]
+
+        self.N_f = self.m * self.g - fz
+
+        # Flight condition check
+        z_front, _ = self._compute_gear_heights(state)
+        if self.N_f <= 0.0 and z_front > self.z_liftoff_threshold:
+            sdot = self._flight_dynamics(state, u)
+            self.is_contact = False
+        else:
+            cth = np.cos(pitch)
+            sth = np.sin(pitch)
+            M_contact = self.m * self.g * ((self.h_g + self.z_off) * sth
+                                           - (self.x_g - self.x_off) * cth)
+            My = M[1]  # Pitch moment
+
+            # Pitch dynamics (primary rotation in contact)
+            dqdt_pitch = w[1]
+            dwdt_pitch = 1.0 / self.Jyy_f * (My + self.x_g * f + M_contact)
+
+            # Position follows rotation around front gear
+            dpdt_x = self.r_f * w[1] * np.cos(pitch - self.delta_f)
+            dpdt_z = -self.r_f * w[1] * np.sin(pitch - self.delta_f)
+            dpdt = np.array([dpdt_x, 0.0, dpdt_z])
+
+            dvdt_x = (self.r_f * dwdt_pitch * np.cos(pitch - self.delta_f)
+                      + self.r_f * (w[1] ** 2) * (-np.sin(pitch - self.delta_f)))
+            dvdt_z = (self.r_f * dwdt_pitch * (-np.sin(pitch - self.delta_f))
+                      + self.r_f * (w[1] ** 2) * (-np.cos(pitch - self.delta_f)))
+            dvdt = np.array([dvdt_x, 0.0, dvdt_z])
+
+            # Quaternion update (mainly pitch change)
+            w_quat = vec_to_quaternion_form(w)
+            dqdt = 0.5 * otimes(q, w_quat)
+
+            # Angular velocity: only pitch rate changes, others damped
+            K_damp = 100.0
+            dwdt = np.array([-K_damp * w[0], dwdt_pitch, -K_damp * w[2]])
+
+            sdot = self.pack_state(dpdt, dvdt, dqdt, dwdt)
+
+        return sdot
+
+    def _rear_dynamics(self, state, u):
+        """Rear landing gear contact dynamics."""
+        p, v_world, q, w = self._unpack_state_world(state)
+        q = q / np.linalg.norm(q, 2)
+        f, M = self.unpack_control_input(u)
+        R = quaternion_to_rotm(q)
+        roll, pitch, yaw = quaternion_to_euler(q)
+
+        W_f = R @ (f * self.e3)
+        fz = W_f[2]
+
+        self.N_b = self.m * self.g - fz
+
+        # Flight condition check
+        _, z_rear = self._compute_gear_heights(state)
+        if self.N_b <= 0.0 and z_rear > self.z_liftoff_threshold:
+            sdot = self._flight_dynamics(state, u)
+            self.is_contact = False
+        else:
+            cth = np.cos(pitch)
+            sth = np.sin(pitch)
+            M_contact = self.m * self.g * ((self.h_g + self.z_off) * sth
+                                           + (self.x_g + self.x_off) * cth)
+            My = M[1]  # Pitch moment
+
+            # Pitch dynamics
+            dqdt_pitch = w[1]
+            dwdt_pitch = 1.0 / self.Jyy_b * (My - self.x_g * f + M_contact)
+
+            # Position follows rotation around rear gear
+            dpdt_x = -self.r_b * w[1] * np.cos(pitch + self.delta_b)
+            dpdt_z = self.r_b * w[1] * np.sin(pitch + self.delta_b)
+            dpdt = np.array([dpdt_x, 0.0, dpdt_z])
+
+            dvdt_x = (-self.r_b * dwdt_pitch * np.cos(pitch + self.delta_b)
+                      + self.r_b * (w[1] ** 2) * (-np.sin(pitch + self.delta_b)))
+            dvdt_z = (self.r_b * dwdt_pitch * np.sin(pitch + self.delta_b)
+                      + self.r_b * (w[1] ** 2) * (-np.cos(pitch + self.delta_b)))
+            dvdt = np.array([dvdt_x, 0.0, dvdt_z])
+
+            # Quaternion update
+            w_quat = vec_to_quaternion_form(w)
+            dqdt = 0.5 * otimes(q, w_quat)
+
+            # Angular velocity: only pitch rate changes, others damped
+            K_damp = 100.0
+            dwdt = np.array([-K_damp * w[0], dwdt_pitch, -K_damp * w[2]])
+
+            sdot = self.pack_state(dpdt, dvdt, dqdt, dwdt)
+
+        return sdot
+
+    def get_state(self, state):
+        """Get state with coordinate transformation from CM to Body."""
+        return state  # For 6DOF, return as-is (transformation done in unpack)
+
+    def clamp_ground(self, state):
+        """Clamp state to prevent ground penetration after ODE step."""
+        z_front, z_rear = self._compute_gear_heights(state)
+        min_z_gear = min(z_front, z_rear)
+
+        if not self.is_contact:
+            return state
+
+        # In contact mode: prevent penetration
+        if min_z_gear < 0.0:
+            state[2] -= min_z_gear
+
+        # If both gears are near ground, enforce full ground contact
+        z_front, z_rear = self._compute_gear_heights(state)
+        q = state[6:10]
+        q = q / np.linalg.norm(q, 2)
+        roll, pitch, yaw = quaternion_to_euler(q)
+
+        h_diff = self.x_g * np.abs(np.sin(pitch))
+        if max(z_front, z_rear) < h_diff + 0.005:
+            # Both gears effectively on ground
+            # Zero out velocities
+            state[3:6] = 0.0  # v = 0
+            state[10:13] = 0.0  # w = 0
+            # Reset to level attitude (keep yaw)
+            state[6:10] = np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
+            # Reset height for level contact
+            state[2] = self.h_g + self.z_off
+
+        return state
