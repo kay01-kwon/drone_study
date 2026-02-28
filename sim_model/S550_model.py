@@ -80,6 +80,9 @@ class S550_Sim_Model:
         # Tip over angle limit
         self.tip_over_angle = np.deg2rad(80)
 
+        # Initial height offset for coordinate transformation (like PX4)
+        self.z_offset_initial = 0.0
+
     def pack_state(self, p, v, q, w):
         """Pack state into vector"""
         return np.concatenate([p, v, q, w])
@@ -368,9 +371,92 @@ class S550_Sim_Model:
 
         return sdot
 
-    def get_state(self, state):
-        """Get state with coordinate transformation from CM to Body."""
-        return state  # For 6DOF, return as-is (transformation done in unpack)
+    def get_state(self, state, z_offset=0.0):
+        """
+        Get state with coordinate transformation from CM to Body origin.
+        Like mavros/local_position/odom:
+        - Position: World frame (Body origin, not CM)
+        - Velocity: Body frame
+
+        Coordinate transformation (from lecture slide):
+        Position: ^W p_{W→B} = ^W p_{W→CM} - R_B^W · ^B p_{B→CM}
+        Velocity: ^B v = (R_B^W)^T · ^W v
+
+        Args:
+            state: [p_cm(3), v_world(3), q(4), w(3)] - 13 dim
+            z_offset: Initial height offset to subtract (like PX4 hg offset)
+
+        Returns:
+            state_out: [p_body_origin(3), v_body(3), q(4), w(3)] - 13 dim
+                       Position in World frame (Body origin)
+                       Velocity in Body frame
+        """
+        # Unpack state (CM frame)
+        p_cm = state[0:3].copy()
+        v_world = state[3:6].copy()
+        q = state[6:10].copy()
+        w = state[10:13].copy()
+
+        # Normalize quaternion
+        q = q / np.linalg.norm(q)
+
+        # Rotation matrix: Body to World
+        R_B_W = quaternion_to_rotm(q)
+
+        # Position transformation: CM to Body origin (World frame)
+        # ^W p_{W→B} = ^W p_{W→CM} - R_B^W · ^B p_{B→CM}
+        p_body_origin = p_cm - R_B_W @ self.r_off
+
+        # Apply height offset (like PX4 subtracts initial hg)
+        p_body_origin[2] -= z_offset
+
+        # Velocity transformation: World to Body frame
+        # ^B v = (R_B^W)^T · ^W v = R_W^B · ^W v
+        v_body = R_B_W.T @ v_world
+
+        # Pack output state
+        state_out = np.zeros(13)
+        state_out[0:3] = p_body_origin  # Position in World frame (Body origin)
+        state_out[3:6] = v_body         # Velocity in Body frame
+        state_out[6:10] = q             # Quaternion (Body to World)
+        state_out[10:13] = w            # Angular velocity in Body frame
+
+        return state_out
+
+    def set_initial_height_offset(self, state):
+        """
+        Set initial height offset from current state.
+        Like PX4/Pixhawk EKF2 that subtracts initial hg from mocap rigid body.
+
+        Call this once at initialization after drone is on ground.
+
+        Args:
+            state: Initial state [p_cm(3), v_world(3), q(4), w(3)]
+        """
+        # Get body origin position at initial state
+        q = state[6:10]
+        q = q / np.linalg.norm(q)
+        R_B_W = quaternion_to_rotm(q)
+
+        # Body origin height = CM height - rotated z_offset
+        p_cm = state[0:3]
+        p_body_origin = p_cm - R_B_W @ self.r_off
+
+        # Store initial height as offset
+        self.z_offset_initial = p_body_origin[2]
+
+    def get_transformed_state(self, state):
+        """
+        Convenience method: get state with stored initial height offset.
+
+        Returns:
+            state_out: Position (World, Body origin), Velocity (Body frame)
+        """
+        return self.get_state(state, self.z_offset_initial)
+
+    def get_landing_gear_height(self):
+        """Get landing gear height (hg) for reference."""
+        return self.h_g
 
     def clamp_ground(self, state):
         """Clamp state to prevent ground penetration after ODE step."""
