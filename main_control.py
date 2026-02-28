@@ -119,6 +119,10 @@ def main():
                                         initial_offset=initial_pos,
                                         Dim=6)
 
+    # Set initial height offset for coordinate transformation (like PX4 hg offset)
+    # This makes z=0 at ground level (body origin), matching mocap/PX4 convention
+    drone_sim_model.set_initial_height_offset(s_drone)
+
     # Simulation parameters
     tf = params['sim_params']['tf']
     dt = params['sim_params']['dt']
@@ -171,8 +175,16 @@ def main():
 
     # Main simulation loop
     for i in range(N-1):
-        # Unpack state
-        p, v, q, w = drone_sim_model.unpack_state(s_drone)
+        # Get transformed state (like mavros/local_position/odom)
+        # Position: World frame (Body origin), Velocity: Body frame
+        s_transformed = drone_sim_model.get_transformed_state(s_drone)
+
+        # Unpack transformed state
+        p = s_transformed[0:3]      # Position (World, Body origin, height offset applied)
+        v = s_transformed[3:6]      # Velocity (Body frame)
+        q = s_transformed[6:10]     # Quaternion
+        w = s_transformed[10:13]    # Angular velocity (Body frame)
+
         w_rotor, alpha_rotor = rotor_sim_model.unpack_state(s_rotor)
         roll, pitch, yaw = quaternion_to_euler(q)
         s_feedback = np.concatenate([p, v, q, w])
