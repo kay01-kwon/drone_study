@@ -14,7 +14,7 @@ def state_initialize(idle_rotor_speed, initial_offset = None, Dim = 6):
         if initial_offset is not None:
             p = np.array(initial_offset)
         else:
-            p = np.zeros((3,))
+            p = np.array([0.0, 0.0, 0.258])
 
         v = np.zeros((3,))
         q = np.array([1.0, 0.0, 0.0, 0.0])
