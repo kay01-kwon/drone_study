@@ -251,7 +251,7 @@ def plot_results_3d_v2(t, drone_data, rotor_data, ref_data, dob_data,
 
     # Disturbance moment comparison
     if 'tau_actual' in dob_data:
-        fig_dist, axes_dist = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+        fig_dist, axes_dist = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
 
         axes_dist[0].plot(t, dob_data['tau_actual'], 'b-', linewidth=1.5,
                           label=r'$\tau_{actual}$')
@@ -262,14 +262,24 @@ def plot_results_3d_v2(t, drone_data, rotor_data, ref_data, dob_data,
         axes_dist[0].legend()
         axes_dist[0].grid(True, alpha=0.3)
 
-        if 'My_comp' in dob_data:
-            axes_dist[1].plot(t, dob_data['My_comp'], 'g-', linewidth=1.5,
-                              label=r'$M_{y,comp}$')
+        if 'tau_effective' in dob_data:
+            axes_dist[1].plot(t, dob_data['tau_est'], 'r--', linewidth=1.0,
+                              alpha=0.5, label=r'$\tau_{est}$ (raw)')
+            axes_dist[1].plot(t, dob_data['tau_effective'], 'g-', linewidth=1.5,
+                              label=r'$\tau_{effective}$ (pitch-latched)')
             axes_dist[1].set_ylabel('Moment [Nm]')
-            axes_dist[1].set_xlabel('Time [s]')
-            axes_dist[1].set_title('Compensated Control Moment')
+            axes_dist[1].set_title('Effective DOB Moment (Pitch Tolerance Latching)')
             axes_dist[1].legend()
             axes_dist[1].grid(True, alpha=0.3)
+
+        if 'My_comp' in dob_data:
+            axes_dist[2].plot(t, dob_data['My_comp'], 'b-', linewidth=1.5,
+                              label=r'$M_{y,comp}$')
+            axes_dist[2].set_ylabel('Moment [Nm]')
+            axes_dist[2].set_xlabel('Time [s]')
+            axes_dist[2].set_title('Compensated Control Moment')
+            axes_dist[2].legend()
+            axes_dist[2].grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.savefig('disturbance_moment_comparison_v2.png', dpi=300)
@@ -498,6 +508,8 @@ def main():
     acc_hist = []
     jerk_henh_x_hist = []
     jerk_henh_z_hist = []
+    tau_effective_hist = []
+    grounded_moment_active_hist = []
 
     # True Jyy for actual physical disturbance computation
     Jyy_true = params['true_dynamic_params']['MoiArray'][1]
@@ -566,16 +578,30 @@ def main():
             t_solve_end = time.perf_counter()
             nmpc_solve_times.append(t_solve_end - t_solve_start)
 
-            # DOB compensation
+            # DOB compensation with pitch tolerance-based moment latching
+            # - Grounded & |pitch| > 5 deg: accumulate max DOB moment
+            # - Grounded & |pitch| < 5 deg: use stored max moment for compensation
+            # - Airborne: use liftoff-latched moment
+            # Note: z-force compensation is always applied (d_est[1])
             if dob is not None:
                 u_mpc = hexa_converter.compute_u(w_cmd)
                 u_comp = u_mpc.copy()
-                u_comp[0] -= d_est[1]  # subtract f_ext_z from Fz
-                u_comp[1] -= d_est[2]  # subtract tau_ext from My
+
+                # Get effective DOB moment (pitch-tolerance based for grounded)
+                tau_effective = controller.get_tau_effective()
+
+                u_comp[0] -= d_est[1]  # always subtract f_ext_z from Fz
+                u_comp[1] -= tau_effective  # subtract pitch-latched tau_ext from My
                 My_comp = u_comp[1]
                 w_cmd = hexa_converter.compute_des_rotor_speed(u_comp)
+
+                # Store tau_effective and grounded moment state for logging
+                tau_effective_hist.append(tau_effective)
+                grounded_moment_active_hist.append(controller.is_grounded_moment_active)
             else:
                 My_comp = hexa_converter.compute_u(w_cmd)[1]
+                tau_effective_hist.append(0.0)
+                grounded_moment_active_hist.append(False)
 
             if status != 0 and i % 100 == 0:
                 print(f"Warning: NMPC solver status {status} at t={t_now:.2f}s")
@@ -651,10 +677,15 @@ def main():
 
         # Print progress
         if i % 1000 == 0:
-            grounded_str = " [GROUNDED]" if (enable_landing and control_type == 'nmpc'
-                                              and controller.is_grounded) else ""
+            status_strs = []
+            if enable_landing and control_type == 'nmpc':
+                if controller.is_grounded:
+                    status_strs.append("GROUNDED")
+                if controller.is_grounded_moment_active:
+                    status_strs.append(f"MOM_COMP={controller.tau_grounded_latched:.3f}")
+            status_str = f" [{', '.join(status_strs)}]" if status_strs else ""
             print(f"t={t_sim[i]:.2f}s, z={p[1]:.3f}m, pitch={np.rad2deg(theta):.2f}deg, "
-                  f"w_rotor=[{w_rotor[0]:.0f}, {w_rotor[1]:.0f}, {w_rotor[2]:.0f}]{grounded_str}")
+                  f"w_rotor=[{w_rotor[0]:.0f}, {w_rotor[1]:.0f}, {w_rotor[2]:.0f}]{status_str}")
 
     # Post-processing
     drone_data = {
@@ -684,7 +715,9 @@ def main():
         'f_est': np.array(f_est_hist),
         'tau_est': np.array(tau_est_hist),
         'tau_actual': np.array(tau_actual_hist),
-        'My_comp': np.array(My_comp_hist)
+        'My_comp': np.array(My_comp_hist),
+        'tau_effective': np.array(tau_effective_hist),
+        'grounded_moment_active': np.array(grounded_moment_active_hist)
     }
 
     # Compute drone jerk from acceleration (numerical differentiation)

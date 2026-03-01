@@ -288,6 +288,24 @@ class S550_3DOF_ocp_v2:
         self.is_grounded = False
         self.landing_start_time = None
 
+        # DOB moment latch for liftoff transition
+        # - Grounded: DOB moment ignored (ground reaction distorts estimate)
+        # - Liftoff detected: latch (freeze) DOB moment at that instant
+        # - Airborne: use latched moment for compensation
+        self.was_grounded = True
+        self.tau_latched = 0.0
+        self.is_tau_latched = False
+
+        # Pitch tolerance-based moment latching for grounded operation
+        # - When |pitch| > 5 deg: track max DOB moment
+        # - When |pitch| < 5 deg: use stored max moment for compensation
+        self.pitch_tolerance_deg = 5.0  # [deg]
+        self.pitch_tolerance_rad = np.deg2rad(self.pitch_tolerance_deg)
+        self.tau_max_grounded = 0.0  # Max DOB moment during grounded pitch excursion
+        self.tau_grounded_latched = 0.0  # Latched moment for compensation
+        self.was_pitch_exceeded = False  # Was pitch > tolerance in previous step
+        self.is_grounded_moment_active = False  # Is grounded moment compensation active
+
     def setup_tracking(self, tracking_params, target_2d):
         """Initialize Hehn trajectory generator for tracking mode."""
         from ref_generation.hehn_trajectory import HehnTrajectoryGenerator, QuadParams
@@ -309,6 +327,93 @@ class S550_3DOF_ocp_v2:
         self.is_landing = is_landing
         if is_landing and t_now is not None:
             self.landing_start_time = t_now
+
+    def process_dob_moment_for_liftoff(self, tau_est, is_grounded):
+        """
+        Process DOB moment with liftoff-aware latching.
+
+        Strategy:
+        - Grounded: DOB moment ignored (ground reaction force distorts estimate)
+        - Liftoff detected (was_grounded -> !is_grounded): latch current DOB moment
+        - Airborne: use latched moment for consistent compensation
+
+        Args:
+            tau_est: Current DOB moment estimate [Nm]
+            is_grounded: Whether drone is currently grounded
+
+        Returns:
+            tau_effective: DOB moment to use for control [Nm]
+        """
+        if is_grounded:
+            # Grounded: ignore DOB (ground reaction distorts it)
+            self.was_grounded = True
+            self.is_tau_latched = False
+            return 0.0
+
+        # Airborne
+        if self.was_grounded and not is_grounded:
+            # Liftoff transition detected: latch current DOB moment
+            self.tau_latched = tau_est
+            self.is_tau_latched = True
+            self.was_grounded = False
+
+        if self.is_tau_latched:
+            return self.tau_latched
+        else:
+            # Normal airborne operation (no liftoff transition)
+            return tau_est
+
+    def process_grounded_moment_with_pitch(self, tau_est, theta, is_grounded):
+        """
+        Process DOB moment with pitch tolerance-based latching for grounded operation.
+
+        Strategy:
+        - Grounded & |pitch| > 5 deg: track max DOB moment (update tau_max_grounded)
+        - Grounded & |pitch| < 5 deg: use stored max moment for compensation
+        - Airborne: reset grounded moment tracking
+
+        Args:
+            tau_est: Current DOB moment estimate [Nm]
+            theta: Current pitch angle [rad]
+            is_grounded: Whether drone is currently grounded
+
+        Returns:
+            tau_grounded: DOB moment for grounded compensation [Nm]
+                         - 0.0 if pitch > tolerance (still accumulating)
+                         - tau_grounded_latched if pitch < tolerance
+        """
+        if not is_grounded:
+            # Airborne: reset grounded moment tracking
+            self.tau_max_grounded = 0.0
+            self.tau_grounded_latched = 0.0
+            self.was_pitch_exceeded = False
+            self.is_grounded_moment_active = False
+            return 0.0
+
+        # Grounded operation
+        pitch_exceeded = abs(theta) > self.pitch_tolerance_rad
+
+        if pitch_exceeded:
+            # |pitch| > 5 deg: track max DOB moment (absolute value)
+            if abs(tau_est) > abs(self.tau_max_grounded):
+                # Keep sign of max moment
+                self.tau_max_grounded = tau_est
+            self.was_pitch_exceeded = True
+            self.is_grounded_moment_active = False
+            return 0.0  # Don't compensate while accumulating
+
+        else:
+            # |pitch| < 5 deg
+            if self.was_pitch_exceeded:
+                # Transition from exceeded to within tolerance: latch the max moment
+                self.tau_grounded_latched = self.tau_max_grounded
+                self.is_grounded_moment_active = True
+                self.was_pitch_exceeded = False
+
+            if self.is_grounded_moment_active:
+                return self.tau_grounded_latched
+            else:
+                return 0.0
 
     def update_dob_moment(self, tau_est, dt):
         """
@@ -434,8 +539,18 @@ class S550_3DOF_ocp_v2:
         is_grounded = z_current <= self.grounded_threshold
         self.is_grounded = is_grounded
 
-        # Update DOB moment rate
-        tau_dot = self.update_dob_moment(tau_est, dt)
+        # Process DOB moment with pitch tolerance-based latching for grounded operation
+        # - Grounded & |pitch| > 5 deg: track max DOB moment
+        # - Grounded & |pitch| < 5 deg: use stored max moment for compensation
+        # - Airborne: use liftoff-latched moment
+        theta = state[4]
+        _ = self.process_grounded_moment_with_pitch(tau_est, theta, is_grounded)
+
+        # Also process for liftoff transition (airborne operation)
+        tau_effective = self.process_dob_moment_for_liftoff(tau_est, is_grounded)
+
+        # Update DOB moment rate using effective (latched) moment
+        tau_dot = self.update_dob_moment(tau_effective, dt)
 
         # Compute dynamic angular jerk limit
         theta = state[4]
@@ -520,6 +635,42 @@ class S550_3DOF_ocp_v2:
         w_cmd = np.sqrt(u / self.C_T)
 
         return status, w_cmd, p_des, v_des, th_des, q_des
+
+    def get_tau_effective(self):
+        """
+        Get the effective DOB moment after liftoff-aware processing.
+
+        Returns:
+            tau_effective: The latched/processed DOB moment [Nm]
+                          - Grounded & |pitch| > 5 deg: 0.0 (still accumulating)
+                          - Grounded & |pitch| < 5 deg: tau_grounded_latched (max moment)
+                          - Airborne after liftoff: tau_latched
+        """
+        if self.is_grounded:
+            # Use pitch tolerance-based grounded moment
+            if self.is_grounded_moment_active:
+                return self.tau_grounded_latched
+            else:
+                return 0.0
+        elif self.is_tau_latched:
+            return self.tau_latched
+        else:
+            return self.tau_prev  # fallback to last processed value
+
+    def get_grounded_moment_info(self):
+        """
+        Get diagnostic information about grounded moment latching.
+
+        Returns:
+            dict: Diagnostic info about grounded moment state
+        """
+        return {
+            'pitch_tolerance_deg': self.pitch_tolerance_deg,
+            'tau_max_grounded': self.tau_max_grounded,
+            'tau_grounded_latched': self.tau_grounded_latched,
+            'was_pitch_exceeded': self.was_pitch_exceeded,
+            'is_grounded_moment_active': self.is_grounded_moment_active,
+        }
 
     def _generate_trajectory_simple(self, state_2d, t_now):
         """Generate Hehn trajectory with custom z-jerk limit."""
