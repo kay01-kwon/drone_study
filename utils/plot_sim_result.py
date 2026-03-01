@@ -175,21 +175,21 @@ def create_state_figure(t, pos, vel, roll, pitch, yaw, pos_des, vel_des, yaw_des
     axes[2, 1].grid(True)
 
     # Row 3: Attitude
-    axes[0, 2].plot(t, roll, 'b-', label=r'$\phi$', linewidth=2)
-    axes[0, 2].set_ylabel(r'$\phi$ [rad]')
+    axes[0, 2].plot(t, np.rad2deg(roll), 'b-', label=r'$\phi$', linewidth=2)
+    axes[0, 2].set_ylabel(r'$\phi$ [deg]')
     axes[0, 2].set_xlabel('time [s]')
     axes[0, 2].legend()
     axes[0, 2].grid(True)
 
-    axes[1, 2].plot(t, pitch, 'b-', label=r'$\theta$', linewidth=2)
-    axes[1, 2].set_ylabel(r'$\theta$ [rad]')
+    axes[1, 2].plot(t, np.rad2deg(pitch), 'b-', label=r'$\theta$', linewidth=2)
+    axes[1, 2].set_ylabel(r'$\theta$ [deg]')
     axes[1, 2].set_xlabel('time [s]')
     axes[1, 2].legend()
     axes[1, 2].grid(True)
 
-    axes[2, 2].plot(t, yaw, 'b-', label=r'$\psi$', linewidth=2)
-    axes[2, 2].plot(t, yaw_des, 'r--', label=r'$\psi_{\mathrm{des}}$', linewidth=2)
-    axes[2, 2].set_ylabel(r'$\psi$ [rad]')
+    axes[2, 2].plot(t, np.rad2deg(yaw), 'b-', label=r'$\psi$', linewidth=2)
+    axes[2, 2].plot(t, np.rad2deg(yaw_des), 'r--', label=r'$\psi_{\mathrm{des}}$', linewidth=2)
+    axes[2, 2].set_ylabel(r'$\psi$ [deg]')
     axes[2, 2].set_xlabel('time [s]')
     axes[2, 2].legend()
     axes[2, 2].grid(True)

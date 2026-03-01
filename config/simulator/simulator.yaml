@@ -19,7 +19,7 @@ rotor_params:
   num_rotors: 6  # Number of rotors
 
 simulation:
-  initial_pos: [0.0, 0.0, 0.0]  # Initial position [m]
+  initial_pos: [0.0, 0.0, 0.258]  # Initial position [m]
   w_rotor_idle: 2000.0  # Idle rotor speed [RPM]
-  tf: 100.0  # Final time [s]
+  tf: 20.0  # Final time [s]
   dt: 0.010  # Time step [s]

@@ -408,7 +408,7 @@ class S550_Sim_Model:
         p_body_origin = p_cm - R_B_W @ self.r_off
 
         # Apply height offset (like PX4 subtracts initial hg)
-        p_body_origin[2] -= z_offset
+        p_body_origin[2] -= self.h_g
 
         # Velocity transformation: World to Body frame
         # ^B v = (R_B^W)^T · ^W v = R_W^B · ^W v

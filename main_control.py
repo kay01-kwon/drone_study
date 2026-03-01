@@ -114,14 +114,10 @@ def main():
     w_rotor_idle = params['sim_params']['w_rotor_idle']
 
     # Initialize at ground level (like Gazebo)
-    initial_pos = [0.0, 0.0, 0.0]  # Ground level
+    initial_pos = [-0.0105, 0.0, 0.258]  # Ground level
     s_drone, s_rotor = state_initialize(w_rotor_idle,
                                         initial_offset=initial_pos,
                                         Dim=6)
-
-    # Set initial height offset for coordinate transformation (like PX4 hg offset)
-    # This makes z=0 at ground level (body origin), matching mocap/PX4 convention
-    drone_sim_model.set_initial_height_offset(s_drone)
 
     # Simulation parameters
     tf = params['sim_params']['tf']
